@@ -1,0 +1,315 @@
+openapi: 3.0.3
+info:
+  title: iBanking Tuition Payment Services (Student & Payment Microservices)
+  description: OpenAPI specification for Student Service and Payment Service in TDTU iBanking System.
+  version: 1.0.0
+servers:
+  - url: http://localhost:4001/api
+    description: Student Service
+  - url: http://localhost:4002/api
+    description: Payment Service
+
+paths:
+  # Student Service Endpoints
+  /students/{studentCode}:
+    get:
+      summary: Tra cứu thông tin sinh viên theo MSSV
+      tags:
+        - Student Service
+      parameters:
+        - name: studentCode
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "521H0001"
+      responses:
+        '200':
+          description: Thông tin chi tiết sinh viên
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentResponse'
+        '404':
+          description: Không tìm thấy sinh viên
+
+  /tuitions/student/{studentCode}:
+    get:
+      summary: Lấy khoản học phí cần thanh toán của sinh viên
+      tags:
+        - Student Service
+      parameters:
+        - name: studentCode
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "521H0001"
+      responses:
+        '200':
+          description: Khoản học phí cần nộp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TuitionFeeResponse'
+        '404':
+          description: Không có khoản nợ học phí hoặc sinh viên không tồn tại
+
+  /tuitions/{id}/pay:
+    patch:
+      summary: Cập nhật trạng thái học phí sang PAID (Internal API với Pessimistic Lock)
+      tags:
+        - Student Service
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Đã cập nhật học phí thành PAID
+        '409':
+          description: Khoản học phí đã được thanh toán trước đó
+
+  # Payment Service Endpoints
+  /payments/create-intent:
+    post:
+      summary: Tạo yêu cầu thanh toán học phí và gửi mã OTP
+      tags:
+        - Payment Service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentIntentRequest'
+      responses:
+        '201':
+          description: Đã tạo giao dịch PENDING và gửi OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentIntentResponse'
+        '400':
+          description: Dữ liệu không hợp lệ hoặc học phí đã được thanh toán
+        '402':
+          description: Số dư khả dụng không đủ để thanh toán
+
+  /payments/confirm-otp:
+    post:
+      summary: Xác nhận OTP và hoàn tất thanh toán (Xử lý Concurrency & Transaction)
+      tags:
+        - Payment Service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmOtpRequest'
+      responses:
+        '200':
+          description: Thanh toán thành công (COMPLETED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmOtpResponse'
+        '400':
+          description: OTP sai hoặc đã hết hạn
+        '402':
+          description: Số dư khả dụng không đủ khi trừ tiền
+        '409':
+          description: Học phí đã được thanh toán bởi giao dịch khác hoặc OTP đã sử dụng
+
+  /payments/account/{accountId}:
+    get:
+      summary: Lấy lịch sử giao dịch theo tài khoản người nộp
+      tags:
+        - Payment Service
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "ACC-001"
+      responses:
+        '200':
+          description: Danh sách lịch sử giao dịch
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentDetail'
+
+  /payments/{paymentId}:
+    get:
+      summary: Tra cứu chi tiết giao dịch theo ID
+      tags:
+        - Payment Service
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Chi tiết giao dịch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetail'
+        '404':
+          description: Không tìm thấy giao dịch
+
+components:
+  schemas:
+    StudentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentCode:
+          type: string
+          example: "521H0001"
+        fullName:
+          type: string
+          example: "Nguyễn Văn A"
+        email:
+          type: string
+          example: "521h0001@student.tdtu.edu.vn"
+        phone:
+          type: string
+          example: "0901234567"
+        faculty:
+          type: string
+          example: "Công nghệ thông tin"
+
+    TuitionFeeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        studentCode:
+          type: string
+          example: "521H0001"
+        studentName:
+          type: string
+          example: "Nguyễn Văn A"
+        semester:
+          type: string
+          example: "HK1_2026_2027"
+        amount:
+          type: number
+          example: 12500000
+        status:
+          type: string
+          enum: [UNPAID, PAID]
+          example: "UNPAID"
+
+    CreatePaymentIntentRequest:
+      type: object
+      required:
+        - accountId
+        - studentCode
+        - tuitionFeeId
+        - payerEmail
+      properties:
+        accountId:
+          type: string
+          example: "ACC-998877"
+        studentCode:
+          type: string
+          example: "521H0001"
+        tuitionFeeId:
+          type: string
+          format: uuid
+        payerEmail:
+          type: string
+          format: email
+          example: "payer@gmail.com"
+
+    CreatePaymentIntentResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        transactionReference:
+          type: string
+          example: "TXN-20261107-991283"
+        status:
+          type: string
+          example: "PENDING"
+        amount:
+          type: number
+          example: 12500000
+        message:
+          type: string
+          example: "Mã OTP đã được gửi đến email payer@gmail.com. Vui lòng nhập OTP để xác nhận trong 5 phút."
+
+    ConfirmOtpRequest:
+      type: object
+      required:
+        - paymentId
+        - otpCode
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        otpCode:
+          type: string
+          example: "123456"
+
+    ConfirmOtpResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        transactionReference:
+          type: string
+          example: "TXN-20261107-991283"
+        status:
+          type: string
+          example: "COMPLETED"
+        amount:
+          type: number
+          example: 12500000
+        paidAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+          example: "Thanh toán học phí thành công."
+
+    PaymentDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED, EXPIRED]
+        transactionReference:
+          type: string
+        payerEmail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+

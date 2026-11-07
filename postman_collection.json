@@ -1,0 +1,271 @@
+{
+  "info": {
+    "name": "iBanking Tuition Payment - (Student & Payment Services)",
+    "_postman_id": "ibanking-tuition-collection",
+    "description": "Collection API cho Student Service (4001), Payment Service (4002) và Mock Account Service (4003)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "student_url",
+      "value": "http://localhost:4001/api",
+      "type": "string"
+    },
+    {
+      "key": "payment_url",
+      "value": "http://localhost:4002/api",
+      "type": "string"
+    },
+    {
+      "key": "account_url",
+      "value": "http://localhost:4003/api",
+      "type": "string"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tuition_fee_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Student Service",
+      "item": [
+        {
+          "name": "1.1 Tra cứu sinh viên theo MSSV (Hợp lệ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{student_url}}/students/521H0001",
+              "host": ["{{student_url}}"],
+              "path": ["students", "521H0001"]
+            }
+          }
+        },
+        {
+          "name": "1.2 Tra cứu sinh viên (Không tồn tại - 404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{student_url}}/students/999X9999",
+              "host": ["{{student_url}}"],
+              "path": ["students", "999X9999"]
+            }
+          }
+        },
+        {
+          "name": "1.3 Lấy khoản học phí cần nộp theo MSSV",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "    pm.collectionVariables.set('tuition_fee_id', json.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{student_url}}/tuitions/student/521H0001",
+              "host": ["{{student_url}}"],
+              "path": ["tuitions", "student", "521H0001"]
+            }
+          }
+        },
+        {
+          "name": "1.4 Tra cứu học phí đã nộp (521H0003 - PAID)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{student_url}}/tuitions/student/521H0003",
+              "host": ["{{student_url}}"],
+              "path": ["tuitions", "student", "521H0003"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Payment Service",
+      "item": [
+        {
+          "name": "2.1 Tạo yêu cầu thanh toán (Create Intent - PENDING)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.paymentId) {",
+                  "    pm.collectionVariables.set('payment_id', json.data.paymentId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-001\",\n  \"studentCode\": \"521H0001\",\n  \"tuitionFeeId\": \"{{tuition_fee_id}}\",\n  \"payerEmail\": \"phu@tdtu.edu.vn\"\n}"
+            },
+            "url": {
+              "raw": "{{payment_url}}/payments/create-intent",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "create-intent"]
+            }
+          }
+        },
+        {
+          "name": "2.2 Từ chối thanh toán một phần (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-001\",\n  \"studentCode\": \"521H0001\",\n  \"tuitionFeeId\": \"{{tuition_fee_id}}\",\n  \"payerEmail\": \"phu@tdtu.edu.vn\",\n  \"amount\": 5000000\n}"
+            },
+            "url": {
+              "raw": "{{payment_url}}/payments/create-intent",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "create-intent"]
+            }
+          }
+        },
+        {
+          "name": "2.3 Từ chối khi số dư không đủ (402 - ACC-LOW)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-LOW\",\n  \"studentCode\": \"521H0001\",\n  \"tuitionFeeId\": \"{{tuition_fee_id}}\",\n  \"payerEmail\": \"low@tdtu.edu.vn\"\n}"
+            },
+            "url": {
+              "raw": "{{payment_url}}/payments/create-intent",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "create-intent"]
+            }
+          }
+        },
+        {
+          "name": "2.4 Xác thực OTP & Hoàn tất thanh toán (COMPLETED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentId\": \"{{payment_id}}\",\n  \"otpCode\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{payment_url}}/payments/confirm-otp",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "confirm-otp"]
+            },
+            "description": "Lưu ý: Thay thế 'otpCode' bằng mã OTP thực tế nhận được trong console terminal / email."
+          }
+        },
+        {
+          "name": "2.5 Tra cứu chi tiết giao dịch theo ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{payment_url}}/payments/{{payment_id}}",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "{{payment_id}}"]
+            }
+          }
+        },
+        {
+          "name": "2.6 Lịch sử giao dịch của tài khoản",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{payment_url}}/payments/account/ACC-001",
+              "host": ["{{payment_url}}"],
+              "path": ["payments", "account", "ACC-001"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Mock Account Service (TV1 Prototype)",
+      "item": [
+        {
+          "name": "3.1 Tra cứu thông tin & số dư tài khoản",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{account_url}}/accounts/ACC-001",
+              "host": ["{{account_url}}"],
+              "path": ["accounts", "ACC-001"]
+            }
+          }
+        },
+        {
+          "name": "3.2 Trừ tiền tài khoản (Internal Debit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-001\",\n  \"amount\": 12500000,\n  \"paymentId\": \"demo-test-id\"\n}"
+            },
+            "url": {
+              "raw": "{{account_url}}/accounts/deduct",
+              "host": ["{{account_url}}"],
+              "path": ["accounts", "deduct"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
