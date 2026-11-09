@@ -1,0 +1,154 @@
+openapi: 3.0.3
+info:
+  title: iBanking Account
+  version: 1.0.0
+servers:
+  - url: '/'
+security: [{ bearer: [] }]
+paths:
+  /api/accounts/me:
+    get:
+      summary: Thông tin tài khoản của JWT
+      responses:
+        '200':
+          description: Hồ sơ và số dư VND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountResponse' }
+        '401': { description: Token thiếu hoặc không hợp lệ }
+        '404': { description: Chưa có tài khoản }
+  /api/accounts/me/balance:
+    get:
+      summary: Số dư khả dụng
+      responses:
+        '200':
+          description: Số dư VND nguyên
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceResponse' }
+        '401': { description: Token thiếu hoặc không hợp lệ }
+        '404': { description: Chưa có tài khoản }
+  /api/accounts/me/transactions:
+    get:
+      summary: Tối đa 100 giao dịch Payment gần nhất
+      responses:
+        '200':
+          description: Lịch sử của tài khoản hiện tại
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        transactionReference: { type: string }
+                        amount: { type: number }
+                        status: { type: string, enum: [PENDING, COMPLETED, FAILED, EXPIRED] }
+                        createdAt: { type: string, format: date-time }
+                        updatedAt: { type: string, format: date-time }
+        '401': { description: Token thiếu hoặc không hợp lệ }
+        '404': { description: Chưa có tài khoản }
+  /api/accounts/{accountId}:
+    get:
+      servers: [{ url: '/' }]
+      security: [{ serviceToken: [] }]
+      summary: Tra cứu tài khoản từ Payment
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Hồ sơ và số dư
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountResponse' }
+        '401': { description: Thiếu xác thực dịch vụ }
+        '404': { description: Không tìm thấy tài khoản }
+  /api/accounts/deduct:
+    post:
+      servers: [{ url: '/' }]
+      security: [{ serviceToken: [] }]
+      summary: Ghi nợ một lần cho mỗi paymentId
+      requestBody: { $ref: '#/components/requestBodies/BalanceChange' }
+      responses:
+        '200':
+          description: Ghi nợ hoặc phát lại kết quả đã lưu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      paymentId: { type: string, format: uuid }
+                      accountId: { type: string }
+                      remainingBalance: { type: integer, format: int64 }
+        '400': { description: INVALID_INPUT }
+        '401': { description: SERVICE_UNAUTHORIZED }
+        '402': { description: INSUFFICIENT_BALANCE }
+        '404': { description: ACCOUNT_NOT_FOUND }
+        '409': { description: PAYMENT_CONFLICT hoặc DEBIT_REFUNDED }
+  /api/accounts/refund:
+    post:
+      servers: [{ url: '/' }]
+      security: [{ serviceToken: [] }]
+      summary: Hoàn khoản debit đã commit tối đa một lần
+      requestBody: { $ref: '#/components/requestBodies/BalanceChange' }
+      responses:
+        '200':
+          description: Hoàn tiền hoặc phát lại kết quả đã lưu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BalanceResponse' }
+        '400': { description: INVALID_INPUT }
+        '401': { description: SERVICE_UNAUTHORIZED }
+        '404': { description: ACCOUNT_NOT_FOUND hoặc DEBIT_NOT_FOUND }
+        '409': { description: PAYMENT_CONFLICT hoặc DEBIT_NOT_APPLIED }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+    serviceToken: { type: apiKey, in: header, name: X-Account-Service-Token }
+  requestBodies:
+    BalanceChange:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [paymentId, accountId, amount]
+            properties:
+              paymentId: { type: string, format: uuid }
+              accountId: { type: string, pattern: '^[\w-]{1,50}$' }
+              amount: { type: integer, format: int64, minimum: 1, maximum: 999999999999 }
+  schemas:
+    AccountResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            accountId: { type: string }
+            fullName: { type: string }
+            email: { type: string }
+            phone: { type: string }
+            balance: { type: integer, format: int64 }
+    BalanceResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            paymentId: { type: string, format: uuid }
+            accountId: { type: string }
+            balance: { type: integer, format: int64 }

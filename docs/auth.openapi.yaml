@@ -1,0 +1,63 @@
+openapi: 3.0.3
+info:
+  title: iBanking Auth
+  version: 1.0.0
+servers:
+  - url: '/'
+paths:
+  /api/auth/login:
+    post:
+      summary: Đăng nhập
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, maxLength: 80 }
+                password: { type: string, format: password, maxLength: 1024 }
+      responses:
+        '200':
+          description: JWT có hạn 900 giây
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      accessToken: { type: string }
+                      tokenType: { type: string, enum: [Bearer] }
+                      expiresIn: { type: integer, example: 900 }
+        '400': { description: Dữ liệu đầu vào sai }
+        '401': { description: Sai thông tin đăng nhập }
+  /api/auth/me:
+    get:
+      summary: Hồ sơ người đăng nhập
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: Hồ sơ và mã tài khoản
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      userId: { type: string, format: uuid }
+                      username: { type: string }
+                      fullName: { type: string }
+                      email: { type: string }
+                      phone: { type: string }
+                      accountId: { type: string, nullable: true }
+        '401': { description: Token thiếu, sai, hết hạn hoặc người dùng đã bị xóa }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }

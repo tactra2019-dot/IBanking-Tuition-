@@ -1,0 +1,178 @@
+{
+  "info": {
+    "name": "iBanking TV1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://127.0.0.1:4000"
+    },
+    {
+      "key": "accountService",
+      "value": "http://127.0.0.1:4003"
+    },
+    {
+      "key": "username",
+      "value": "demo1"
+    },
+    {
+      "key": "demoPassword",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "serviceToken",
+      "value": ""
+    },
+    {
+      "key": "accountId",
+      "value": "ACC-001"
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Đăng nhập",
+      "request": {
+        "method": "POST",
+        "url": "{{gateway}}/api/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{demoPassword}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) pm.collectionVariables.set('accessToken', pm.response.json().data.accessToken);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hồ sơ",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway}}/api/auth/me",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Tài khoản",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway}}/api/accounts/me",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Số dư",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway}}/api/accounts/me/balance",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Lịch sử",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway}}/api/accounts/me/transactions",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Tra cứu sinh viên",
+      "request": {
+        "method": "GET",
+        "url": "{{gateway}}/api/students/521H0001",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Debit hoặc retry",
+      "request": {
+        "method": "POST",
+        "url": "{{accountService}}/api/accounts/deduct",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Account-Service-Token",
+            "value": "{{serviceToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 1000,\n  \"paymentId\": \"{{paymentId}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Refund hoặc retry",
+      "request": {
+        "method": "POST",
+        "url": "{{accountService}}/api/accounts/refund",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Account-Service-Token",
+            "value": "{{serviceToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"amount\": 1000,\n  \"paymentId\": \"{{paymentId}}\"\n}"
+        }
+      }
+    }
+  ]
+}

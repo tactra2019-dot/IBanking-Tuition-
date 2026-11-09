@@ -288,3 +288,9 @@ npm test
 npm run test:concurrency
 ```
 
+
+## Hướng dẫn TV1
+
+Xem [Auth, Account và Gateway](docs/tv1.md) để chạy chế độ TV1, Swagger, Postman và test PostgreSQL. Xem [contract Payment–Account](docs/payment-account-contract.md) để tích hợp debit và hoàn tiền.
+
+Xem [kết quả kiểm thử TV1](docs/tv1-test-report.md) để phân biệt kết quả trên Account PostgreSQL và bộ hồi quy dùng Mock Account.

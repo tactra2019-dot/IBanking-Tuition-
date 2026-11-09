@@ -23,20 +23,21 @@ async function postNotification(endpoint: string, payload: Record<string, unknow
   try {
     const res = await fetch(`${process.env.NOTIFICATION_SERVICE_URL}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Key': process.env.NOTIFICATION_INTERNAL_KEY || '' },
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify(payload),
     });
     if (res.ok) return true;
-    console.warn(`[mailer] Notification service returned ${res.status}, using local mailer fallback`);
+    throw new Error('Notification từ chối yêu cầu');
   } catch {
-    console.warn('[mailer] Notification service unreachable, using local mailer fallback');
+    throw new Error('Chưa xác nhận gửi email từ Notification');
   }
   return false;
 }
 
 export const mailerService = {
-  async sendOtp(to: string, otpCode: string, paymentRef: string, amount: number, studentCode: string) {
-    if (await postNotification('/otp', { to, otpCode, paymentRef, amount, studentCode })) return;
+  async sendOtp(to: string, otpCode: string, paymentRef: string, amount: number, studentCode: string, paymentId = paymentRef, expiresAt = new Date(Date.now() + 300000)) {
+    if (await postNotification('/otp', { eventId: 'otp-' + paymentId, paymentId, to, otp: otpCode, expiresAt })) return;
 
     const transporter = await getTransporter();
     await transporter.sendMail({
@@ -45,11 +46,11 @@ export const mailerService = {
       subject: `[iBanking] Mã OTP xác nhận thanh toán học phí (${paymentRef})`,
       text: `Mã OTP của bạn là: ${otpCode}. Giao dịch: ${paymentRef}, MSSV: ${studentCode}, Số tiền: ${amount.toLocaleString()} VNĐ. Hiệu lực: 5 phút.`,
     });
-    console.log(`[OTP] Sent to ${to} | Ref: ${paymentRef} | OTP: ${otpCode}`);
+
   },
 
-  async sendReceipt(to: string, paymentRef: string, amount: number, studentCode: string, studentName: string) {
-    if (await postNotification('/receipt', { to, paymentRef, amount, studentCode, studentName })) return;
+  async sendReceipt(to: string, paymentRef: string, amount: number, studentCode: string, studentName: string, paymentId = paymentRef, paidAt = new Date()) {
+    if (await postNotification('/payment-success', { eventId: 'receipt-' + paymentId, paymentId, to, amount, studentId: studentCode, studentName, paidAt, status: 'SUCCESS' })) return;
 
     const transporter = await getTransporter();
     await transporter.sendMail({
@@ -61,3 +62,5 @@ export const mailerService = {
     console.log(`[RECEIPT] Sent to ${to} | Ref: ${paymentRef} | Amount: ${amount}`);
   },
 };
+
+

@@ -6,12 +6,14 @@ export interface AccountInfo {
   balance: number;
 }
 
+const headers = () => ({ 'Content-Type': 'application/json', 'X-Account-Service-Token': process.env.ACCOUNT_SERVICE_TOKEN || '' });
+
 const getBaseUrl = () => process.env.ACCOUNT_SERVICE_URL || 'http://localhost:4003/api';
 
 export const accountClient = {
   async getAccount(accountId: string): Promise<{ ok: boolean; status?: number; data?: AccountInfo; message?: string }> {
     try {
-      const res = await fetch(`${getBaseUrl()}/accounts/${encodeURIComponent(accountId)}`);
+      const res = await fetch(`${getBaseUrl()}/accounts/${encodeURIComponent(accountId)}`, { headers: headers(), signal: AbortSignal.timeout(3000) });
       const body: any = await res.json();
       if (!res.ok) return { ok: false, status: res.status, message: body.message || 'Không tìm thấy tài khoản' };
       return { ok: true, data: body.data ?? body };
@@ -28,7 +30,8 @@ export const accountClient = {
     try {
       const res = await fetch(`${getBaseUrl()}/accounts/deduct`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers(),
+        signal: AbortSignal.timeout(3000),
         body: JSON.stringify({ accountId, amount, paymentId }),
       });
       const body: any = await res.json();
@@ -49,7 +52,8 @@ export const accountClient = {
     try {
       const res = await fetch(`${getBaseUrl()}/accounts/refund`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers(),
+        signal: AbortSignal.timeout(3000),
         body: JSON.stringify({ accountId, amount, paymentId }),
       });
       const body: any = await res.json();
@@ -60,3 +64,4 @@ export const accountClient = {
     }
   },
 };
+

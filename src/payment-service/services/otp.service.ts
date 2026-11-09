@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import crypto from 'node:crypto';
 import { prisma } from '../../shared/prisma';
 
@@ -26,8 +27,8 @@ export const otpService = {
     throw new Error('Không thể sinh mã OTP duy nhất');
   },
 
-  async verifyOtp(paymentId: string, inputCode: string) {
-    const otp = await prisma.otpCode.findFirst({
+  async verifyOtp(paymentId: string, inputCode: string, db: Prisma.TransactionClient = prisma) {
+    const otp = await db.otpCode.findFirst({
       where: { paymentId },
       orderBy: { createdAt: 'desc' },
     });
@@ -36,8 +37,8 @@ export const otpService = {
     if (otp.isUsed) return { valid: false as const, error: 'OTP_ALREADY_USED', message: 'Mã OTP đã được sử dụng' };
 
     if (new Date() > otp.expiresAt) {
-      await prisma.otpCode.updateMany({ where: { id: otp.id, isUsed: false }, data: { isUsed: true } });
-      await prisma.payment.updateMany({
+      await db.otpCode.updateMany({ where: { id: otp.id, isUsed: false }, data: { isUsed: true } });
+      await db.payment.updateMany({
         where: { id: paymentId, status: 'PENDING' },
         data: { status: 'EXPIRED', failureReason: 'OTP hết hạn (quá 5 phút)' },
       });
@@ -48,13 +49,13 @@ export const otpService = {
       const nextAttempts = otp.attempts + 1;
       const exhausted = nextAttempts >= MAX_OTP_ATTEMPTS;
 
-      await prisma.otpCode.update({
+      await db.otpCode.update({
         where: { id: otp.id },
         data: { attempts: nextAttempts, isUsed: exhausted },
       });
 
       if (exhausted) {
-        await prisma.payment.updateMany({
+        await db.payment.updateMany({
           where: { id: paymentId, status: 'PENDING' },
           data: { status: 'FAILED', failureReason: 'Nhập sai OTP quá 5 lần' },
         });
@@ -69,7 +70,7 @@ export const otpService = {
     }
 
     // Atomic compare-and-set: prevents 2 concurrent confirmOtp calls from consuming the same OTP twice
-    const consumed = await prisma.otpCode.updateMany({
+    const consumed = await db.otpCode.updateMany({
       where: { id: otp.id, isUsed: false },
       data: { isUsed: true },
     });
@@ -80,3 +81,4 @@ export const otpService = {
     return { valid: true as const, otp };
   },
 };
+

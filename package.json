@@ -12,7 +12,17 @@
     "db:generate": "prisma generate",
     "seed": "tsx prisma/seed.ts",
     "test": "tsx tests/test-student-service.ts && tsx tests/test-payment-service.ts && tsx tests/test-swagger.ts && tsx tests/concurrency/run-all.ts",
-    "test:concurrency": "tsx tests/concurrency/run-all.ts"
+    "test:concurrency": "tsx tests/concurrency/run-all.ts",
+    "dev:core": "tsx src/api-gateway/index.ts",
+    "dev:auth": "tsx src/auth-service/index.ts",
+    "dev:account": "tsx src/account-service/index.ts",
+    "db:account": "prisma db execute --schema prisma/schema.prisma --file sql/account-schema.sql",
+    "seed:account": "tsx prisma/seed-account.ts",
+    "test:core": "tsx --test tests/core.test.ts",
+    "build": "tsc && node -e \"const fs = require('node:fs'); fs.cpSync('specs', 'dist/specs', { recursive: true }); fs.cpSync('docs', 'dist/docs', { recursive: true })\"",
+    "test:e2e": "tsx --test tests/e2e.test.ts",
+    "recover": "tsx src/payment-service/recover-once.ts",
+    "seed:integration": "tsx prisma/seed-integration.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
@@ -34,4 +44,3 @@
     "typescript": "^5.7.3"
   }
 }
-

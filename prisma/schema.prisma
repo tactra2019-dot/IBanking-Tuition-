@@ -13,6 +13,8 @@ enum TuitionStatus {
 }
 
 enum PaymentStatus {
+  PROCESSING
+  REFUND_PENDING
   PENDING
   COMPLETED
   FAILED
@@ -61,6 +63,7 @@ model Payment {
   status               PaymentStatus @default(PENDING)
   transactionReference String        @unique @map("transaction_reference") @db.VarChar(50)
   payerEmail           String        @map("payer_email") @db.VarChar(100)
+  receiptSent          Boolean       @default(false) @map("receipt_sent")
   failureReason        String?       @map("failure_reason") @db.Text
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
@@ -89,3 +92,38 @@ model OtpCode {
   @@index([paymentId, isUsed])
   @@map("otp_codes")
 }
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username     String   @unique @db.VarChar(80)
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name") @db.VarChar(100)
+  email        String   @db.VarChar(100)
+  phone        String   @db.VarChar(20)
+  account      Account?
+
+  @@map("users")
+}
+
+model Account {
+  id      String         @id @db.VarChar(50)
+  userId  String         @unique @map("user_id") @db.Uuid
+  balance BigInt
+  user    User           @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  debits  AccountDebit[]
+
+  @@map("accounts")
+}
+
+model AccountDebit {
+  paymentId        String  @id @map("payment_id") @db.Uuid
+  accountId        String  @map("account_id") @db.VarChar(50)
+  amount           BigInt
+  remainingBalance BigInt? @map("remaining_balance")
+  refundedBalance  BigInt? @map("refunded_balance")
+  account          Account @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("account_debits")
+}
+
+

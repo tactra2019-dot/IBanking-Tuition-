@@ -1,3 +1,4 @@
+import { startRecoveryWorker } from './services/recovery.service';
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
@@ -13,7 +14,9 @@ app.use(createSwaggerRouter());
 app.use('/api', paymentRouter);
 
 if (require.main === module) {
+  startRecoveryWorker();
   const port = Number(process.env.PORT_PAYMENT) || 4002;
   app.listen(port, () => console.log(`[payment-service] listening on http://localhost:${port}`));
 }
+
 

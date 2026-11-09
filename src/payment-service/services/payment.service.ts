@@ -1,3 +1,4 @@
+import { deliverReceipts, recoverPayment } from './recovery.service';
 import crypto from 'node:crypto';
 import { prisma } from '../../shared/prisma';
 import { isEmail, isUuid } from '../../shared/response';
@@ -24,6 +25,7 @@ const formatPayment = (p: any) => ({
   transactionReference: p.transactionReference,
   payerEmail: p.payerEmail,
   failureReason: p.failureReason,
+  expiresAt: p.otpCodes?.[0]?.expiresAt,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
 });
@@ -99,7 +101,7 @@ export const paymentService = {
 
     try {
       const otp = await otpService.generateUniqueOtp(payment.id);
-      await mailerService.sendOtp(payment.payerEmail, otp.code, payment.transactionReference, tuitionAmount, studentCode);
+      await mailerService.sendOtp(payment.payerEmail, otp.code, payment.transactionReference, tuitionAmount, studentCode, payment.id, otp.expiresAt);
 
       return {
         data: {
@@ -130,7 +132,7 @@ export const paymentService = {
 
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { student: true, tuitionFee: true },
+      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
     if (!payment) {
@@ -149,119 +151,33 @@ export const paymentService = {
       };
     }
 
-    // 1. Atomic OTP check & consume
-    const otpCheck = await otpService.verifyOtp(paymentId, otpCode);
+    const otpCheck = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
+      const result = await otpService.verifyOtp(paymentId, otpCode, tx);
+      if (result.valid) {
+        await tx.payment.update({ where: { id: paymentId }, data: { status: 'PROCESSING' } });
+      }
+      return result;
+    });
     if (!otpCheck.valid) {
-      const status = otpCheck.error === 'OTP_ALREADY_USED' ? 409 : 400;
-      return { error: otpCheck.error, status, message: otpCheck.message };
+      return { error: otpCheck.error, status: 400, message: otpCheck.message };
     }
-
-    // 2. Interactive Transaction: Account Advisory Lock + Payment Row Lock + Tuition Row Lock
-    let deducted = false;
     const amount = Number(payment.amount);
-    let completedPayment: any;
-
+    let completedPayment;
     try {
-      completedPayment = await prisma.$transaction(
-        async (tx) => {
-          // 2a. Serialize concurrent payments from the SAME account (anti double-spending)
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${payment.accountId}))`;
-
-          // 2b. Lock payment row to guarantee single processing
-          const [lockedPayment]: any[] = await tx.$queryRaw`
-            SELECT id, status FROM "payments" WHERE "id" = ${paymentId}::uuid FOR UPDATE
-          `;
-          if (!lockedPayment || lockedPayment.status !== 'PENDING') {
-            throw new Error('PAYMENT_NOT_PENDING');
-          }
-
-          // 2c. Exclusive Row Lock on tuition_fee (anti duplicate MSSV payment)
-          const [lockedTuition]: any[] = await tx.$queryRaw`
-            SELECT id, status FROM "tuition_fees" WHERE "id" = ${payment.tuitionFeeId}::uuid FOR UPDATE
-          `;
-          if (!lockedTuition) throw new Error('TUITION_NOT_FOUND');
-          if (lockedTuition.status === 'PAID') throw new Error('TUITION_ALREADY_PAID');
-
-          // 2d. Deduct balance on Account Service
-          const deductResult = await accountClient.deductBalance(payment.accountId, amount, payment.id);
-          if (!deductResult.ok) {
-            const err: any = new Error(deductResult.message || 'Trừ tiền tài khoản thất bại');
-            err.code = 'DEDUCT_FAILED';
-            err.status = deductResult.status || 402;
-            throw err;
-          }
-          deducted = true;
-
-          // Optional fault injection for integration test (simulates DB crash after debit)
-          if (faultInjectionHook) faultInjectionHook();
-
-          // 2e. Commit PAID & COMPLETED atomically
-          await tx.tuitionFee.update({
-            where: { id: payment.tuitionFeeId },
-            data: { status: 'PAID' },
-          });
-
-          return tx.payment.update({
-            where: { id: paymentId },
-            data: { status: 'COMPLETED' },
-          });
-        },
-        { timeout: 15000 }
-      );
-    } catch (err: any) {
-      // Compensation refund if money was already debited before DB failure
-      if (deducted) {
-        await accountClient.refundBalance(payment.accountId, amount, payment.id);
-      }
-
-      if (err.message === 'TUITION_ALREADY_PAID') {
-        await prisma.payment.updateMany({
-          where: { id: paymentId, status: 'PENDING' },
-          data: { status: 'FAILED', failureReason: 'Khoản học phí đã được người khác thanh toán' },
-        });
-        return {
-          error: 'TUITION_ALREADY_PAID' as const,
-          status: 409,
-          message: 'Khoản học phí đã được thanh toán bởi giao dịch khác (Chống thanh toán trùng MSSV)',
-        };
-      }
-
-      if (err.code === 'DEDUCT_FAILED') {
-        await prisma.payment.updateMany({
-          where: { id: paymentId, status: 'PENDING' },
-          data: { status: 'FAILED', failureReason: err.message },
-        });
-        return {
-          error: 'DEDUCT_FAILED' as const,
-          status: err.status || 402,
-          message: err.message,
-        };
-      }
-
-      await prisma.payment.updateMany({
-        where: { id: paymentId, status: 'PENDING' },
-        data: { status: 'FAILED', failureReason: err.message || 'Lỗi xử lý giao dịch (đã hoàn tiền nếu có)' },
-      });
-
+      completedPayment = await recoverPayment(paymentId, faultInjectionHook ?? undefined);
+      if (completedPayment.status === 'REFUND_PENDING') completedPayment = await recoverPayment(paymentId);
+    } catch {
+      return { error: 'PAYMENT_PROCESSING', status: 202, message: 'Đang đối soát giao dịch, vui lòng tra cứu lại' };
+    }
+    if (completedPayment.status !== 'COMPLETED') {
       return {
-        error: 'TRANSACTION_FAILED' as const,
-        status: 500,
-        message: err.message || 'Lỗi hoàn tất giao dịch',
+        error: completedPayment.status === 'FAILED' ? 'TRANSACTION_FAILED' : 'PAYMENT_PROCESSING',
+        status: completedPayment.status === 'FAILED' ? 409 : 202,
+        message: completedPayment.failureReason || 'Đang đối soát giao dịch',
       };
     }
-
-    // 3. Receipt email sent AFTER commit — email hiccup must NEVER fail or refund a committed payment
-    try {
-      await mailerService.sendReceipt(
-        payment.payerEmail,
-        payment.transactionReference,
-        amount,
-        payment.student.studentCode,
-        payment.student.fullName
-      );
-    } catch (mailErr) {
-      console.warn('[mailer] Receipt send failed after commit:', mailErr);
-    }
+    await deliverReceipts().catch(() => undefined);
 
     return {
       data: {
@@ -281,7 +197,7 @@ export const paymentService = {
     if (!isUuid(paymentId)) return null;
     const p = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { student: true, tuitionFee: true },
+      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
     return p ? formatPayment(p) : null;
   },
@@ -289,9 +205,11 @@ export const paymentService = {
   async getByAccount(accountId: string) {
     const list = await prisma.payment.findMany({
       where: { accountId: accountId.trim() },
-      include: { student: true, tuitionFee: true },
+      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
       orderBy: { createdAt: 'desc' },
     });
     return list.map(formatPayment);
   },
 };
+
+
