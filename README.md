@@ -1,4 +1,4 @@
-# Phân Hệ Thanh Toán Học Phí iBanking (TDTU) - TV2: Payment & Database
+# Phân Hệ Thanh Toán Học Phí iBanking (TDTU)
 
 Dự án giữa kỳ môn **Kiến trúc hướng dịch vụ (SOA - CS504070)**.
 Xây dựng hệ thống:  **Payment & Database**.
