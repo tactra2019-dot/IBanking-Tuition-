@@ -8,6 +8,7 @@
 
 - [Thành viên và phân công](#thành-viên-và-phân-công)
 - [Chức năng và công nghệ](#chức-năng-và-công-nghệ)
+- [Địa chỉ truy cập](#địa-chỉ-truy-cập-sau-khi-khởi-động)
 - [Kiến trúc và trách nhiệm](#kiến-trúc-và-trách-nhiệm)
 - [Cấu trúc dự án và thiết kế dữ liệu](#cấu-trúc-dự-án-và-thiết-kế-dữ-liệu)
 - [Yêu cầu và cấu hình môi trường](#yêu-cầu-và-cấu-hình-môi-trường)
@@ -15,6 +16,7 @@
 - [API qua Gateway](#api-qua-gateway)
 - [Quy trình thanh toán và tính nhất quán](#quy-trình-thanh-toán-và-tính-nhất-quán)
 - [Hướng dẫn demo](#hướng-dẫn-demo)
+- [Đặt lại mật khẩu tài khoản demo](#đặt-lại-mật-khẩu-tài-khoản-demo)
 - [Build và kiểm thử](#build-và-kiểm-thử)
 - [Giao diện, tài liệu và tình trạng dự án](#giao-diện-tài-liệu-và-tình-trạng-dự-án)
 - [Bảo mật và giới hạn hiện tại](#bảo-mật-và-giới-hạn-hiện-tại)
@@ -46,34 +48,18 @@ Bảng phản ánh phân công nhóm và thành phần hiện có; Git history k
 | Testing | Node test runner, Vitest/Testing Library, JUnit, Mailpit | Unit, API, E2E, concurrency và email |
 | Developer tools | npm scripts, Maven Wrapper, Swagger UI/OpenAPI | Build, test và xem contract |
 
-## Truy cập bản QA trên máy này
+## Địa chỉ truy cập sau khi khởi động
 
-Bản QA của nhánh `fix/microservices-architecture` đã được chạy và kiểm thử ngày **15/11/2026**. Nếu các tiến trình vẫn đang hoạt động:
+Các địa chỉ dưới đây dùng **cổng mặc định trong file mẫu**; nếu bạn đổi cổng trong `.env`, thay bằng giá trị tương ứng. Frontend phải chạy với `VITE_DEMO_MODE=false` khi trình diễn backend thật.
 
-| Mục | Địa chỉ / thông tin |
+| Thành phần | URL mặc định |
 | --- | --- |
-| Giao diện | [http://127.0.0.1:5173/](http://127.0.0.1:5173/) |
-| Gateway health | [http://127.0.0.1:4010/health](http://127.0.0.1:4010/health) |
-| Swagger Gateway | [http://127.0.0.1:4010/docs/](http://127.0.0.1:4010/docs/) |
-| Mailpit, nơi xem OTP | [http://127.0.0.1:8026/](http://127.0.0.1:8026/) |
-| Tài khoản demo | `demo1` hoặc `demo2` |
-| Mật khẩu demo | Giá trị `DEMO_PASSWORD` trong file `.env` local; không lưu mật khẩu vào Git |
-| Email nhận OTP của bản QA | `demo1@ibanking.test`, do `DEMO_EMAIL` trong `.env` quyết định |
-| MSSV chưa thanh toán | `521H9001` (7.000.000 VND), `521H9002` (5.000.000 VND), `521H9003` (12.000.000 VND) khi vừa seed |
+| Frontend | [http://127.0.0.1:5173/](http://127.0.0.1:5173/) |
+| Gateway health | [http://127.0.0.1:4000/health](http://127.0.0.1:4000/health) |
+| Swagger Gateway | [http://127.0.0.1:4000/docs/](http://127.0.0.1:4000/docs/) |
+| Mailpit (email OTP và biên nhận) | [http://127.0.0.1:8025/](http://127.0.0.1:8025/) |
 
-Cả `demo1` và `demo2` dùng cùng `DEMO_PASSWORD`. Seed hiện dùng một giá trị `DEMO_EMAIL` cho cả hai tài khoản, nên hãy lọc thư theo **mã giao dịch mới nhất** trong Mailpit. Các khoản học phí có thể chuyển sang PAID sau khi bạn demo; `seed:integration` không đặt lại trạng thái của dữ liệu đã tồn tại.
-
-**Lấy OTP:** đăng nhập, mở **Thanh toán học phí**, nhập MSSV chưa thanh toán, xác nhận yêu cầu, rồi mở Mailpit. Chọn email có tiêu đề OTP gửi tới `DEMO_EMAIL`, lấy mã sáu chữ số và nhập vào trang OTP trong vòng **5 phút**. Sau khi thanh toán, Mailpit nhận thêm biên nhận. Đây là SMTP local; không gửi email ra Internet.
-
-Để khởi động lại đúng môi trường QA đã tạo trong checkout này, mở Docker Desktop rồi chạy tại thư mục gốc repo:
-
-```powershell
-docker compose -p ibanking-full-qa --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml up -d --wait
-npm.cmd run dev:ui --prefix frontend
-```
-
-Giữ terminal chạy Vite mở. Các file `.env`, `.env.compose.local` và `frontend/.env` là cấu hình local đã được Git ignore. Nếu không có các file đó, làm theo phần **Dựng môi trường mới** bên dưới. Không chạy lại seed để “reset” dữ liệu demo đang dùng.
-
+Đây là URL **local**, chỉ hoạt động sau khi bạn đã làm các bước cấu hình và khởi động bên dưới. Không dùng địa chỉ của một máy QA khác để kiểm tra bản clone mới.
 ## Kiến trúc và trách nhiệm
 
 ```mermaid
@@ -139,7 +125,15 @@ Bốn service có PostgreSQL role riêng, chỉ được cấp quyền bảng m�
 
 ## Yêu cầu và cấu hình môi trường
 
-Các bước dưới đây dành cho Windows PowerShell; trên hệ điều hành khác dùng lệnh tương đương. Node Docker image dùng **22**; Vite 7 trên host cần Node **22.12+** hoặc phiên bản mới được Vite hỗ trợ. Repo không khóa npm version. Notification Docker image build bằng Maven **3.9** và JDK **17**; chạy local dùng Maven Wrapper `notification-service/mvnw.cmd` với JDK 17+. PostgreSQL Compose dùng image **16-alpine**. Cần Docker Desktop/Compose cho phương án A; phương án B vẫn dùng Docker cho PostgreSQL và Mailpit.
+### Phần mềm cần có
+
+- [Git](https://git-scm.com/install/) để clone repository.
+- [Node.js](https://nodejs.org/en/download/) kèm npm để chạy Prisma và frontend trên host. Dockerfile backend dùng Node **22**; Vite 7 trong frontend cần Node **22.12+** hoặc **24+**. Repo không khóa npm version.
+- [Docker Desktop cho Windows](https://docs.docker.com/desktop/setup/install/windows-install/) với Linux containers và Docker Compose để chạy PostgreSQL, Mailpit, Notification và năm service Node theo Option A. Compose dùng PostgreSQL **16-alpine**. Không cần cài PostgreSQL riêng nếu dùng Compose.
+- Chỉ khi chạy Notification/JUnit **ngoài Docker**: [JDK 17+](https://adoptium.net/temurin/releases/?version=17). Repo có Maven Wrapper; không cần cài Maven riêng. Máy dùng JDK 11 mặc định sẽ không build được Notification.
+- OTP demo gửi tới **Mailpit local** qua SMTP trong Compose; không cần tài khoản email thật hoặc SMTP bên ngoài.
+
+Các lệnh bên dưới đã được kiểm tra trong **Windows PowerShell**. Docker Compose có file cấu hình đa nền tảng, nhưng startup trên macOS/Linux chưa được xác minh trong audit này; dùng `cp` thay `Copy-Item`, `npm` thay `npm.cmd` và `./mvnw` thay `.\mvnw.cmd` nếu tự chạy trên các hệ đó.
 
 ### Biến môi trường quan trọng
 
@@ -154,22 +148,28 @@ Các bước dưới đây dành cho Windows PowerShell; trên hệ điều hàn
 | Frontend | `VITE_DEMO_MODE`, `VITE_API_BASE_URL`, `VITE_API_CONTRACT_CONFIRMED` | Chọn mock/API thật và địa chỉ Gateway `/api` |
 | SMTP local | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_AUTH`, `SMTP_STARTTLS`, `MAIL_FROM` | Cấu hình Notification khi không dùng mặc định Mailpit trong Compose |
 
-Xem [.env.example](.env.example), [frontend/.env.example](frontend/.env.example) và [application.yml](notification-service/src/main/resources/application.yml). Không đưa secret vào `VITE_*` hoặc Git.
+Xem [.env.example](.env.example), [frontend/.env.example](frontend/.env.example) và [application.yml](notification-service/src/main/resources/application.yml). Compose cấu hình Notification gửi qua Mailpit, nên không cần tài khoản SMTP thật. `SMTP_HOST/PORT/USER/PASS` ở `.env` là fallback của Payment khi không dùng Notification; `SMTP_USERNAME/PASSWORD/AUTH/STARTTLS/MAIL_FROM` là cấu hình Spring Mail khi chạy Notification ngoài Compose. Không đưa secret vào `VITE_*` hoặc Git.
 
 ## Chạy bằng Docker Compose hoặc local
 
 ### Option A — Docker Compose và frontend trên host
 
-### 1. Yêu cầu
+#### 1. Clone và kiểm tra môi trường
 
-- Node.js hỗ trợ Vite 7 (khuyến nghị **22.12+ hoặc 24 LTS**) và npm.
-- Docker Desktop có Docker Compose.
-- JDK **17+** và Maven Wrapper để chạy test Notification bằng Java.
-- Các cổng bạn chọn cho PostgreSQL, Gateway, Vite, Mailpit và Notification chưa bị service khác sử dụng.
+Mở PowerShell ở thư mục bạn muốn đặt dự án. Nếu đã có checkout đúng branch, bỏ qua `git clone` và chuyển vào thư mục repo.
 
-**Chỉ dùng database phát triển/test riêng.** Các lệnh `db:push` và seed dưới đây dành cho schema mới có tên bắt đầu bằng `micro_`. E2E và core DB test chỉ chấp nhận schema `micro_test_*`. Đừng áp schema mới lên dữ liệu demo cũ hoặc production.
+```powershell
+git clone --single-branch --branch fix/microservices-architecture https://github.com/tactra2019-dot/IBanking-Tuition-.git Midterm_SOA
+Set-Location .\Midterm_SOA
+git branch --show-current
+node --version
+npm.cmd --version
+docker compose version
+```
 
-### 2. Tạo cấu hình local
+Khởi động Docker Desktop trước khi chạy Compose. **Chỉ dùng database phát triển/test riêng.** Các lệnh `db:push` và seed dưới đây dành cho schema mới có tên bắt đầu bằng `micro_`. E2E và core DB test chỉ chấp nhận schema `micro_test_*`. Đừng áp schema mới lên dữ liệu demo cũ hoặc production.
+
+#### 2. Tạo cấu hình local
 
 Từ thư mục gốc repo:
 
@@ -202,7 +202,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 
 Không đặt JWT, OTP, service token hay mật khẩu DB vào biến `VITE_*`; các biến này được đóng gói vào frontend. File `.env` và `.env.*.local` đã được Git ignore, nhưng vẫn cần kiểm tra `git status` trước khi chia sẻ code.
 
-### 3. PostgreSQL, Notification và database
+#### 3. PostgreSQL, Notification và database
 
 Chọn một tên project Compose riêng. Ví dụ `ibanking-demo`:
 
@@ -240,7 +240,7 @@ npm.cmd run build
 
 `seed:account` tạo `demo1`/`demo2`; `seed:integration` tạo ba MSSV `521H9001`–`521H9003`. Seed account **không đổi mật khẩu** của user đã tồn tại. Nếu đổi `DEMO_PASSWORD` sau lần seed đầu, tài khoản cũ vẫn dùng mật khẩu ban đầu. Không chạy script `npm run seed` cũ trên database demo đang sử dụng.
 
-### 4. Chạy năm service Node bằng Docker Compose
+#### 4. Chạy năm service Node bằng Docker Compose
 
 Bốn role URL trong `.env` dùng địa chỉ PostgreSQL **trên host** để test bằng Node. Container cần hostname `postgres`, port `5432`. Tạo file Compose local từ `.env`:
 
@@ -259,17 +259,17 @@ docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -
 
 `config -q` phải thoát mã 0. `up --wait` phải báo tất cả container healthy. File `.env.compose.local` đã được Git ignore. Nếu Compose đã chạy với cấu hình cũ, không đổi mật khẩu/volume hiện có tùy tiện; tạo project và cổng mới.
 
-### 5. Chạy frontend dùng API thật
+#### 5. Chạy frontend dùng API thật
 
 Sửa `frontend/.env`:
 
 ```dotenv
 VITE_DEMO_MODE=false
 VITE_API_CONTRACT_CONFIRMED=true
-VITE_API_BASE_URL=http://127.0.0.1:4010/api
+VITE_API_BASE_URL=http://127.0.0.1:4000/api
 ```
 
-Đổi `4010` thành `GATEWAY_PORT` thực tế. `FRONTEND_ORIGIN` trong `.env` phải là `http://127.0.0.1:5173`. Trong một terminal riêng:
+Đổi `4000` thành `GATEWAY_PORT` thực tế (ví dụ `4010` nếu cổng mặc định đang bận). `FRONTEND_ORIGIN` trong `.env` phải là `http://127.0.0.1:5173`. Trong một terminal riêng:
 
 ```powershell
 npm.cmd ci --prefix frontend
@@ -323,7 +323,7 @@ cd notification-service
 .\mvnw.cmd spring-boot:run
 ```
 
-Mở terminal 2 tại thư mục gốc repo: `npm.cmd run dev`. Script [`src/run-all.ts`](src/run-all.ts) khởi chạy **năm process riêng** từ `dist/`, đặt role DB riêng cho Auth/Account/Student/Payment; Gateway mặc định cổng 4000. Sau khi sửa source, chạy `npm.cmd run build` và khởi động lại. Mở terminal 3: `npm.cmd ci --prefix frontend; npm.cmd run dev:ui --prefix frontend`, với `frontend/.env` ở chế độ API thật và `VITE_API_BASE_URL=http://127.0.0.1:4000/api`. Đóng từng terminal bằng `Ctrl+C`.
+Mở terminal 2 tại thư mục gốc repo: `npm.cmd run dev`. Script [`src/run-all.ts`](src/run-all.ts) khởi chạy **năm process riêng** từ `dist/`, đặt role DB riêng cho Auth/Account/Student/Payment; Gateway mặc định cổng 4000 (`PORT_GATEWAY` khi chạy local; `GATEWAY_PORT` chỉ áp dụng cho Compose). Sau khi sửa source, chạy `npm.cmd run build` và khởi động lại. Mở terminal 3: `npm.cmd ci --prefix frontend; npm.cmd run dev:ui --prefix frontend`, với `frontend/.env` ở chế độ API thật và `VITE_API_BASE_URL=http://127.0.0.1:4000/api`. Đóng từng terminal bằng `Ctrl+C`.
 
 ## API qua Gateway
 
@@ -404,11 +404,31 @@ Frontend chỉ hiện thành công khi API trả trạng thái hoàn tất. API 
 4. Mở Mailpit tại cổng `MAILPIT_HTTP_PORT`, lấy OTP email của giao dịch mới nhất trong 5 phút và nhập trên UI.
 5. Xem kết quả, số dư mới, trạng thái học phí PAID và lịch sử; xem thêm email biên nhận trong Mailpit.
 
-Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Nếu MSSV mẫu đã PAID, tạo schema demo mới theo phần cài đặt; không sửa dữ liệu thủ công trong schema đang trình diễn.
+Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Để demo lại từ đầu, tạo **checkout và project Compose mới**, schema `micro_` mới và cổng host còn trống, rồi lặp lại các bước cấu hình, tạo bảng/role và seed ở Option A. Checkout riêng tránh xung đột file `.env.micro-roles.local` vốn chỉ được tạo một lần. Giữ volume cũ nếu cần đối soát; không dùng `docker compose down -v` hoặc `db:push` lên schema đang có dữ liệu. Mật khẩu demo được chọn khi seed lần đầu và không lưu trong README.
+
+## Đặt lại mật khẩu tài khoản demo
+
+Chạy tại thư mục gốc repo. Mật khẩu được hash bằng scrypt và lưu ở bảng `users`; sửa `DEMO_PASSWORD` trong `.env` hoặc chạy lại seed **không** đổi mật khẩu tài khoản đã tồn tại. Lệnh quản trị local sau dùng `DATABASE_URL` của schema `micro_*`, chỉ cập nhật đúng username được chọn; không có endpoint đổi mật khẩu công khai.
+
+```powershell
+$env:RESET_USERNAME = 'demo1'
+$secure = Read-Host 'Mật khẩu mới (ít nhất 12 ký tự)' -AsSecureString
+$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $env:RESET_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  npm.cmd run password:reset
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+  Remove-Item Env:RESET_PASSWORD -ErrorAction SilentlyContinue
+  Remove-Item Env:RESET_USERNAME -ErrorAction SilentlyContinue
+}
+```
+
+Đăng xuất và đăng nhập lại bằng mật khẩu mới. Các JWT đã phát trước đó vẫn có hiệu lực đến khi hết hạn (hiện 15 phút); nếu cần thu hồi ngay, cần cơ chế revoke token chưa có trong dự án.
 
 ## Build và kiểm thử
 
-Chạy test có ghi database **chỉ** với schema riêng `micro_test_*`, không dùng schema demo đang trình diễn. `.env` của terminal test phải trỏ tới schema này, URL role phải trỏ cùng schema, Notification/Mailpit local phải hoạt động.
+Chạy test có ghi database **chỉ** với schema riêng `micro_test_*`, không dùng schema demo đang trình diễn. Cách ít rủi ro nhất là tạo **checkout và Compose project thử nghiệm riêng**, lặp lại các bước 2–4 của Option A với `DATABASE_URL` có `?schema=micro_test_<tên-riêng>`, cổng host còn trống và bốn role URL trỏ cùng schema. Không chạy `seed:account`/`seed:integration` nếu chỉ chạy bộ test; các test tạo fixture riêng. Trong terminal test, nạp biến từ `.env` thử nghiệm (hoặc cấu hình môi trường tương đương), bảo đảm `NOTIFICATION_SERVICE_URL` và `MAILPIT_ORIGIN` trỏ đúng container local trước khi chạy lệnh dưới đây.
 
 ```powershell
 npm.cmd run build
@@ -426,7 +446,7 @@ cd notification-service
 
 `npm test` backend chạy core unit tests; sáu test DB chỉ chạy khi `RUN_CORE_DB_TESTS=1`. `test:e2e` tạo fixture test và đọc OTP từ Mailpit; `test:processes` khởi động từng process với role riêng rồi kiểm tra thanh toán/restart. Trên Windows, nếu `java -version` đang là JDK 11, đặt `JAVA_HOME` tới JDK 17+ trước khi dùng Maven Wrapper. Repo hiện không có script lint.
 
-Đợt QA ngày 15/11/2026: backend core DB **10/10**, E2E API thật **19/19**, process test **1/1**, Notification JUnit **10/10**, frontend mock/component **24/24**; build backend/frontend và tám container Compose đều đạt. Xem [báo cáo đầy đủ](docs/FULL_SYSTEM_TEST_REPORT.md). Kết quả frontend mock/component không thay thế kiểm thử click thực tế trên trình duyệt.
+Đợt QA ngày 15/11/2026: backend core DB **10/10**, E2E API thật **19/19**, process test **1/1**, Notification JUnit **10/10**, frontend mock/component **24/24**; build backend/frontend và tám container Compose đều đạt. Xem [báo cáo QA](docs/FULL_SYSTEM_TEST_REPORT.md) và [final audit](docs/FINAL_AUDIT_REPORT.md). Các bài API E2E và frontend component không thay thế kiểm thử click toàn bộ luồng trên trình duyệt.
 
 ## Kiểm tra và xử lý sự cố
 
@@ -441,7 +461,7 @@ cd notification-service
 
 Không commit `.env`, URL role, JWT/service token, mật khẩu DB hay OTP. Chỉ Gateway và các cổng demo cần thiết được publish trên loopback; không dùng cấu hình này để mở trực tiếp ra Internet. Mailpit chỉ dùng email giả lập. Bốn service dùng chung một PostgreSQL server/schema nhưng quyền bảng được chia theo role; đây là mức tách dữ liệu hiện có của dự án.
 
-Kiểm thử API và email local đã đạt; **kiểm tra trực quan desktop/mobile và toàn bộ thao tác UI bằng trình duyệt chưa được xác nhận tự động** trong báo cáo QA. `npm audit --omit=dev` ở thời điểm QA còn bốn cảnh báo high ở backend, cần đánh giá/nâng dependency trước khi triển khai công khai. Chuyển dữ liệu demo cũ sang kiến trúc mới cần kế hoạch backfill và đối soát payment đang mở; không chạy `db:push` lên schema cũ.
+Kiểm thử API và email local đã đạt; **kiểm tra trực quan desktop/mobile và toàn bộ thao tác UI bằng trình duyệt chưa được xác nhận tự động**. [Final audit](docs/FINAL_AUDIT_REPORT.md) đánh giá `NOT READY — CRITICAL ISSUES` trước khi khẳng định đáp ứng toàn bộ đề. OTP được gắn với `paymentId` và không dùng nhầm giữa các giao dịch, nhưng bộ sinh mã số chưa bảo đảm hai OTP đang hiệu lực luôn khác nhau; xem [final audit](docs/FINAL_AUDIT_REPORT.md) trước khi khẳng định đáp ứng toàn bộ đề. `npm audit --omit=dev` ở thời điểm QA còn bốn cảnh báo high ở backend, cần đánh giá/nâng dependency trước khi triển khai công khai. Chuyển dữ liệu demo cũ sang kiến trúc mới cần kế hoạch backfill và đối soát payment đang mở; không chạy `db:push` lên schema cũ.
 
 ## Giao diện, tài liệu và tình trạng dự án
 
@@ -455,6 +475,6 @@ Các màn hình trong [`frontend/src/pages/`](frontend/src/pages/) gồm Login, 
 | Demo frontend mock | Implemented | Dữ liệu RAM; hành vi có thể khác API thật |
 | Production deployment/migration | Not Verified | Chưa có kiểm thử triển khai công khai hoặc migration versioned |
 
-Tài liệu liên quan: [Auth/Account/Gateway và hướng dẫn](docs/tv1.md), [test report TV1](docs/tv1-test-report.md), [Postman collection](docs/tv1.postman_collection.json), [Auth OpenAPI](docs/auth.openapi.yaml), [Account OpenAPI](docs/account.openapi.yaml), [Payment–Account contract](docs/payment-account-contract.md), [Payment/Student specification](specs/001-payment-student-service/spec.md), [data model](specs/001-payment-student-service/data-model.md), [quickstart](specs/001-payment-student-service/quickstart.md) và [full system test report](docs/FULL_SYSTEM_TEST_REPORT.md). Repo hiện không có file Use Case Diagram, ERD ảnh hoặc Architecture Audit riêng đã xác minh; sơ đồ kiến trúc trong README và Prisma schema là nguồn tham chiếu hiện có.
+Tài liệu liên quan: [Auth/Account/Gateway và hướng dẫn](docs/tv1.md), [test report TV1](docs/tv1-test-report.md), [Postman collection](docs/tv1.postman_collection.json), [Auth OpenAPI](docs/auth.openapi.yaml), [Account OpenAPI](docs/account.openapi.yaml), [Payment–Account contract](docs/payment-account-contract.md), [Payment/Student specification](specs/001-payment-student-service/spec.md), [data model](specs/001-payment-student-service/data-model.md), [quickstart](specs/001-payment-student-service/quickstart.md), [full system test report](docs/FULL_SYSTEM_TEST_REPORT.md) và [final audit](docs/FINAL_AUDIT_REPORT.md). Use case Mermaid có trong `docs/tv1.md`; ERD khái niệm Student/Payment có trong `specs/001-payment-student-service/data-model.md` nhưng còn mô tả trạng thái/OTP giai đoạn cũ, không phải sơ đồ dữ liệu cuối. Sơ đồ kiến trúc hiện tại trong README và Prisma schema là nguồn tham chiếu chính.
 
 **Thông tin học thuật:** Đồ án giữa kỳ môn Service-Oriented Architecture (SOA), Trường Đại học Tôn Đức Thắng, năm học 2026–2027. Mọi tài khoản, học phí và giao dịch trong môi trường demo là dữ liệu mô phỏng; ứng dụng không xử lý thanh toán ngân hàng thật.

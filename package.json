@@ -18,6 +18,7 @@
     "dev:account": "tsx src/account-service/index.ts",
     "db:account": "tsx prisma/check-micro-schema.ts && prisma db execute --schema prisma/schema.prisma --file sql/account-schema.sql",
     "seed:account": "tsx prisma/check-micro-schema.ts && tsx prisma/seed-account.ts",
+    "password:reset": "tsx prisma/reset-password.ts",
     "test:core": "tsx --test tests/core.test.ts",
     "build": "tsc && node -e \"const fs = require('node:fs'); fs.cpSync('specs', 'dist/specs', { recursive: true }); fs.cpSync('docs', 'dist/docs', { recursive: true })\"",
     "test:e2e": "tsx --test tests/e2e.test.ts",
