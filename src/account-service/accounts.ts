@@ -1,22 +1,23 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '../shared/prisma';
-
-const accountFields = {
-  id: true,
-  balance: true,
-  user: { select: { fullName: true, email: true, phone: true } },
-} satisfies Prisma.AccountSelect;
-
-export type AccountInfo = Prisma.AccountGetPayload<{ select: typeof accountFields }>;
+import { internalToken } from '../shared/internal';
 
 export function accountForUser(userId: string) {
-  return prisma.account.findUnique({ where: { userId }, select: accountFields });
+  return prisma.account.findUnique({ where: { userId }, select: { id: true, userId: true, balance: true } });
 }
 
 export function accountById(id: string) {
-  return prisma.account.findUnique({ where: { id }, select: accountFields });
+  return prisma.account.findUnique({ where: { id }, select: { id: true, userId: true, balance: true } });
 }
 
-export function serializeAccount(account: AccountInfo) {
-  return { accountId: account.id, ...account.user, balance: Number(account.balance) };
+export type AccountInfo = NonNullable<Awaited<ReturnType<typeof accountForUser>>>;
+
+export async function serializeAccount(account: AccountInfo) {
+  const auth = process.env.AUTH_SERVICE_ORIGIN || 'http://127.0.0.1:4004';
+  const response = await fetch(auth + '/internal/users/' + account.userId, {
+    headers: { 'X-Internal-Key': internalToken('AUTH_SERVICE_TOKEN') },
+    signal: AbortSignal.timeout(2500), redirect: 'error',
+  });
+  if (!response.ok) throw new Error('Không lấy được hồ sơ chủ tài khoản');
+  const { data } = await response.json();
+  return { accountId: account.id, ...data, balance: Number(account.balance) };
 }

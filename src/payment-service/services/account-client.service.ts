@@ -48,7 +48,7 @@ export const accountClient = {
     accountId: string,
     amount: number,
     paymentId: string
-  ): Promise<{ ok: boolean; message?: string }> {
+  ): Promise<{ ok: boolean; status?: number; message?: string }> {
     try {
       const res = await fetch(`${getBaseUrl()}/accounts/refund`, {
         method: 'POST',
@@ -57,10 +57,10 @@ export const accountClient = {
         body: JSON.stringify({ accountId, amount, paymentId }),
       });
       const body: any = await res.json();
-      if (!res.ok) return { ok: false, message: body.message || 'Hoàn tiền thất bại' };
+      if (!res.ok) return { ok: false, status: res.status, message: body.message || 'Hoàn tiền thất bại' };
       return { ok: true };
     } catch {
-      return { ok: false, message: 'Account Service không phản hồi khi hoàn tiền bù trừ' };
+      return { ok: false, status: 503, message: 'Account Service không phản hồi khi hoàn tiền bù trừ' };
     }
   },
 };

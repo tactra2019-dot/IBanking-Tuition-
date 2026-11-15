@@ -53,7 +53,9 @@ export function PaymentResultPage() {
               ? "Giao dịch chưa thành công"
               : p.status === "PENDING"
                 ? "Giao dịch đang chờ xác thực"
-                : "Giao dịch đang được xử lý"}
+                : p.status === "REVIEW_REQUIRED"
+                  ? "Giao dịch cần đối soát"
+                  : p.status === "REFUND_PENDING" ? "Đang hoàn tiền" : "Giao dịch đang được xử lý"}
         </h2>
         <p className="muted">
           {success
@@ -61,7 +63,9 @@ export function PaymentResultPage() {
             : failed
               ? p.failureReason ||
                 "Vui lòng kiểm tra thông tin và liên hệ đơn vị quản lý nếu cần."
-              : "Chưa có xác nhận thanh toán thành công. Trạng thái được cập nhật tự động mỗi 5 giây."}
+              : p.status === "REVIEW_REQUIRED"
+                ? "Liên hệ hỗ trợ với mã giao dịch để kiểm tra số dư và học phí."
+                : "Chưa có xác nhận thanh toán thành công. Trạng thái được cập nhật tự động mỗi 5 giây."}
         </p>
         {isDemo && (
           <p className="demo-hint">
@@ -75,7 +79,7 @@ export function PaymentResultPage() {
               Tiếp tục xác thực OTP
             </Link>
           )}
-          {p.status === "PROCESSING" && (
+          {(p.status === "PROCESSING" || p.status === "REFUND_PENDING" || p.status === "REVIEW_REQUIRED") && (
             <Button
               variant="secondary"
               onClick={() => void payment.refetch()}

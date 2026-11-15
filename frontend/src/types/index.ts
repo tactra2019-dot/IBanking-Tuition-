@@ -1,4 +1,4 @@
-export type Status = "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED";
+export type Status = "PENDING" | "PROCESSING" | "REFUND_PENDING" | "REVIEW_REQUIRED" | "SUCCESS" | "FAILED";
 export interface User {
   id: string;
   fullName: string;
@@ -12,6 +12,7 @@ export interface Account {
   currency: string;
 }
 export interface Student {
+  tuitionFeeId?: string;
   id: string;
   fullName: string;
   amount: number;

@@ -83,6 +83,8 @@ const labels: Record<Status, string> = {
   FAILED: "Thất bại",
   PENDING: "Chờ xác thực",
   PROCESSING: "Đang xử lý",
+  REVIEW_REQUIRED: "Cần đối soát",
+  REFUND_PENDING: "Đang hoàn tiền",
 };
 export function StatusBadge({ status }: { status: Status }) {
   return (

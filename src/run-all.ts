@@ -1,12 +1,35 @@
 import 'dotenv/config';
-import { app as accountApp } from './mock-account-service';
-import { app as paymentApp } from './payment-service';
-import { app as studentApp } from './student-service';
+import { spawn, ChildProcess } from 'node:child_process';
+import { resolve } from 'node:path';
 
-const pStudent = Number(process.env.PORT_STUDENT) || 4001;
-const pPayment = Number(process.env.PORT_PAYMENT) || 4002;
-const pAccount = Number(process.env.PORT_ACCOUNT_MOCK) || 4003;
+const services = [
+  ['auth-service', 'AUTH_DATABASE_URL'],
+  ['account-service', 'ACCOUNT_DATABASE_URL'],
+  ['student-service', 'STUDENT_DATABASE_URL'],
+  ['payment-service', 'PAYMENT_DATABASE_URL'],
+  ['api-gateway', null],
+] as const;
 
-studentApp.listen(pStudent, () => console.log(`[student-service]      http://localhost:${pStudent} (Swagger: /docs)`));
-paymentApp.listen(pPayment, () => console.log(`[payment-service]      http://localhost:${pPayment} (Swagger: /docs)`));
-accountApp.listen(pAccount, () => console.log(`[mock-account-service] http://localhost:${pAccount}`));
+for (const [, variable] of services) {
+  if (variable && !process.env[variable]) throw new Error('Thiếu ' + variable);
+}
+
+const children: ChildProcess[] = [];
+let stopping = false;
+function stop(code: number) {
+  if (stopping) return;
+  stopping = true;
+  process.exitCode = code;
+  for (const child of children) child.kill();
+}
+
+for (const [service, variable] of services) {
+  const env = { ...process.env };
+  if (variable) env.DATABASE_URL = process.env[variable];
+  const child = spawn(process.execPath, [resolve('dist/src', service, 'index.js')], { stdio: 'inherit', env });
+  children.push(child);
+  child.once('error', () => stop(1));
+  child.once('exit', code => stop(code ?? 1));
+}
+process.on('SIGINT', () => stop(0));
+process.on('SIGTERM', () => stop(0));

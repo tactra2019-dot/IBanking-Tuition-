@@ -20,6 +20,9 @@ public class InternalAuthFilter extends OncePerRequestFilter {
         if (key == null || key.isBlank() || key.length() < 32) throw new IllegalStateException("NOTIFICATION_INTERNAL_KEY must contain at least 32 characters.");
         this.key = key.getBytes(StandardCharsets.UTF_8);
     }
+    @Override protected boolean shouldNotFilter(HttpServletRequest request) {
+        return "GET".equals(request.getMethod()) && "/health".equals(request.getRequestURI());
+    }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String supplied = request.getHeader("X-Internal-Key");
         response.setHeader("Cache-Control", "no-store");

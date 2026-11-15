@@ -16,7 +16,7 @@ client.interceptors.request.use((config) => {
       !import.meta.env.VITE_API_BASE_URL)
   )
     throw new Error(
-      "API contract chưa được xác nhận. Xem docs/API-CONTRACT.md để cấu hình kết nối.",
+      "API contract chưa được xác nhận. Xem README.md để cấu hình kết nối.",
     );
   if (accessToken && !config.headers.Authorization)
     config.headers.Authorization = `Bearer ${accessToken}`;

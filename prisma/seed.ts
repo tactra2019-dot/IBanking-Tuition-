@@ -1,4 +1,4 @@
-import { TuitionStatus } from '@prisma/client';
+import { TuitionStatus } from '@ibanking/db';
 import { prisma } from '../src/shared/prisma';
 
 const STUDENTS = [
@@ -16,14 +16,11 @@ async function main() {
     ON "payments"("tuition_fee_id") WHERE "status" = 'COMPLETED'
   `);
 
-  await prisma.otpCode.deleteMany();
-  await prisma.payment.deleteMany();
-  await prisma.tuitionFee.deleteMany();
-  await prisma.student.deleteMany();
-
   for (const { amount, status, ...student } of STUDENTS) {
-    await prisma.student.create({
-      data: {
+    await prisma.student.upsert({
+      where: { studentCode: student.studentCode },
+      update: {},
+      create: {
         ...student,
         tuitionFees: { create: { semester: 'HK1_2026_2027', amount, status } },
       },

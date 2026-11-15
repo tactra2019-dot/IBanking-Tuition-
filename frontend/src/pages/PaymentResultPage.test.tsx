@@ -55,3 +55,10 @@ test("FAILED shows an unsuccessful result", () => {
     screen.getByRole("heading", { name: "Giao dịch chưa thành công" }),
   ).toBeTruthy();
 });
+
+test("REVIEW_REQUIRED shows reconciliation instructions", () => {
+  renderStatus("REVIEW_REQUIRED");
+  expect(screen.getByRole("heading", { name: "Giao dịch cần đối soát" })).toBeTruthy();
+  expect(screen.getByText(/Liên hệ hỗ trợ với mã giao dịch/)).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Thanh toán học phí thành công" })).toBeNull();
+});

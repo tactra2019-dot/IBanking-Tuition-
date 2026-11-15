@@ -1,0 +1,65 @@
+x-node: &node
+  image: ibanking-node:local
+  build: .
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + process.env.HEALTH_PORT + '/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+  environment: &common
+    SERVICE_HOST: 0.0.0.0
+    JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET}
+    AUTH_SERVICE_ORIGIN: http://auth:4004
+    ACCOUNT_SERVICE_URL: http://account:4003/api
+    ACCOUNT_SERVICE_ORIGIN: http://account:4003
+    STUDENT_SERVICE_ORIGIN: http://student:4001
+    PAYMENT_SERVICE_ORIGIN: http://payment:4002
+services:
+  gateway:
+    <<: *node
+    command: node dist/src/api-gateway/index.js
+    environment:
+      <<: *common
+      HEALTH_PORT: "4000"
+      GATEWAY_HOST: 0.0.0.0
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    ports: ["127.0.0.1:${GATEWAY_PORT:-4000}:4000"]
+  auth:
+    <<: *node
+    command: node dist/src/auth-service/index.js
+    environment:
+      <<: *common
+      HEALTH_PORT: "4004"
+      DATABASE_URL: ${AUTH_DATABASE_URL:?Thiếu AUTH_DATABASE_URL}
+      AUTH_SERVICE_TOKEN: ${AUTH_SERVICE_TOKEN:?Thiếu AUTH_SERVICE_TOKEN}
+  account:
+    <<: *node
+    command: node dist/src/account-service/index.js
+    environment:
+      <<: *common
+      HEALTH_PORT: "4003"
+      DATABASE_URL: ${ACCOUNT_DATABASE_URL:?Thiếu ACCOUNT_DATABASE_URL}
+      AUTH_SERVICE_TOKEN: ${AUTH_SERVICE_TOKEN:?Thiếu AUTH_SERVICE_TOKEN}
+      ACCOUNT_SERVICE_TOKEN: ${ACCOUNT_SERVICE_TOKEN:?Thiếu ACCOUNT_SERVICE_TOKEN}
+  student:
+    <<: *node
+    command: node dist/src/student-service/index.js
+    environment:
+      <<: *common
+      HEALTH_PORT: "4001"
+      DATABASE_URL: ${STUDENT_DATABASE_URL:?Thiếu STUDENT_DATABASE_URL}
+      STUDENT_SERVICE_TOKEN: ${STUDENT_SERVICE_TOKEN:?Thiếu STUDENT_SERVICE_TOKEN}
+  payment:
+    <<: *node
+    command: node dist/src/payment-service/index.js
+    environment:
+      <<: *common
+      HEALTH_PORT: "4002"
+      DATABASE_URL: ${PAYMENT_DATABASE_URL:?Thiếu PAYMENT_DATABASE_URL}
+      ACCOUNT_SERVICE_TOKEN: ${ACCOUNT_SERVICE_TOKEN:?Thiếu ACCOUNT_SERVICE_TOKEN}
+      STUDENT_SERVICE_TOKEN: ${STUDENT_SERVICE_TOKEN:?Thiếu STUDENT_SERVICE_TOKEN}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?Thiếu NOTIFICATION_INTERNAL_KEY}
+      OTP_SECRET: ${OTP_SECRET:?Thiếu OTP_SECRET}
+      NOTIFICATION_SERVICE_URL: http://notification:8085/internal/notifications
+

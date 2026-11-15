@@ -16,6 +16,7 @@ export const usePayment = (id: string) =>
     enabled: !!id,
     refetchInterval: (q) =>
       q.state.data?.status === "PROCESSING" ||
+      q.state.data?.status === "REFUND_PENDING" ||
       q.state.data?.status === "PENDING"
         ? 5000
         : false,

@@ -1,8 +1,10 @@
+import { Prisma } from '@ibanking/db';
+import { studentRequest, TuitionSnapshot } from './student-client';
 import { deliverReceipts, recoverPayment } from './recovery.service';
 import crypto from 'node:crypto';
 import { prisma } from '../../shared/prisma';
 import { isEmail, isUuid } from '../../shared/response';
-import { mailerService } from '../mailer/mailer.service';
+import { mailerService, NotificationDeliveryUnknown } from '../mailer/mailer.service';
 import { accountClient } from './account-client.service';
 import { otpService } from './otp.service';
 
@@ -12,16 +14,22 @@ export interface CreatePaymentIntentInput {
   tuitionFeeId: string;
   payerEmail: string;
   amount?: number;
+  idempotencyKey?: string;
+}
+
+function pendingStatus(payment: { status: string; createdAt: Date; otpCodes: { expiresAt: Date }[] }) {
+  const expiresAt = payment.otpCodes[0]?.expiresAt.getTime() ?? payment.createdAt.getTime() + 300000;
+  return payment.status === 'PENDING' && expiresAt <= Date.now() ? 'EXPIRED' : payment.status;
 }
 
 const formatPayment = (p: any) => ({
   id: p.id,
   accountId: p.accountId,
-  studentCode: p.student.studentCode,
-  studentName: p.student.fullName,
-  semester: p.tuitionFee.semester,
+  studentCode: p.studentCode,
+  studentName: p.studentName,
+  semester: p.semester,
   amount: Number(p.amount),
-  status: p.status,
+  status: pendingStatus(p),
   transactionReference: p.transactionReference,
   payerEmail: p.payerEmail,
   failureReason: p.failureReason,
@@ -47,20 +55,35 @@ export const paymentService = {
 
     const studentCode = input.studentCode.trim().toUpperCase();
 
-    const tuition = await prisma.tuitionFee.findUnique({
-      where: { id: input.tuitionFeeId },
-      include: { student: true },
-    });
-
-    if (!tuition || tuition.student.studentCode !== studentCode) {
-      return { error: 'INVALID_TUITION' as const, status: 404, message: 'Khoản học phí không tồn tại hoặc không khớp MSSV' };
+    const existingIntent = async () => input.idempotencyKey ? prisma.payment.findUnique({
+      where: { accountId_idempotencyKey: { accountId: input.accountId, idempotencyKey: input.idempotencyKey } },
+      include: { otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    }) : null;
+    const replay = (payment: NonNullable<Awaited<ReturnType<typeof existingIntent>>>) => {
+      if (payment.tuitionFeeId !== input.tuitionFeeId || payment.studentCode !== studentCode ||
+          (input.amount !== undefined && Number(payment.amount) !== input.amount)) {
+        return { error: 'IDEMPOTENCY_CONFLICT', status: 409, message: 'Khóa đã dùng cho khoản phí khác' };
+      }
+      return { data: {
+        paymentId: payment.id, transactionReference: payment.transactionReference, status: pendingStatus(payment),
+        amount: Number(payment.amount), studentCode: payment.studentCode, studentName: payment.studentName,
+        payerEmail: payment.payerEmail, expiresAt: payment.otpCodes[0]?.expiresAt,
+        message: 'Yêu cầu đã được tiếp nhận',
+      } };
+    };
+    const existing = await existingIntent();
+    if (existing) return replay(existing);
+    const response = await studentRequest(input.tuitionFeeId);
+    const tuition: TuitionSnapshot | undefined = response.ok ? (await response.json()).data : undefined;
+    if (!tuition || tuition.studentCode !== studentCode) {
+      return { error: 'INVALID_TUITION', status: response.status >= 500 ? 503 : 404, message: 'Không xác minh được khoản học phí' };
     }
-
     if (tuition.status === 'PAID') {
       return { error: 'ALREADY_PAID' as const, status: 400, message: 'Khoản học phí này đã được thanh toán' };
     }
 
     const tuitionAmount = Number(tuition.amount);
+    if (!Number.isSafeInteger(tuitionAmount) || tuitionAmount <= 0) return { error: 'INVALID_AMOUNT', status: 400, message: 'Số tiền học phí phải là VND nguyên dương' };
 
     if (input.amount !== undefined && Number(input.amount) !== tuitionAmount) {
       return {
@@ -86,22 +109,36 @@ export const paymentService = {
       };
     }
 
-    const transactionReference = `TXN-${Date.now()}-${crypto.randomInt(1000, 9999)}`;
+    const transactionReference = 'TXN-' + crypto.randomUUID();
+    const paymentId = crypto.randomUUID();
+    const otp = otpService.prepare(paymentId);
     const payment = await prisma.payment.create({
       data: {
+        id: paymentId,
+        otpCodes: { create: otp.record },
         accountId: input.accountId.trim(),
         studentId: tuition.studentId,
+        studentCode,
+        studentName: tuition.studentName,
+        semester: tuition.semester,
+        idempotencyKey: input.idempotencyKey,
         tuitionFeeId: tuition.id,
         amount: tuition.amount,
         status: 'PENDING',
         transactionReference,
         payerEmail: input.payerEmail.trim(),
       },
+    }).catch(async error => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const winner = await existingIntent();
+        if (winner) return { replay: replay(winner) };
+      }
+      throw error;
     });
+    if ('replay' in payment) return payment.replay;
 
     try {
-      const otp = await otpService.generateUniqueOtp(payment.id);
-      await mailerService.sendOtp(payment.payerEmail, otp.code, payment.transactionReference, tuitionAmount, studentCode, payment.id, otp.expiresAt);
+      await mailerService.sendOtp(payment.payerEmail, otp.code, payment.transactionReference, tuitionAmount, studentCode, payment.id, otp.record.expiresAt);
 
       return {
         data: {
@@ -110,15 +147,18 @@ export const paymentService = {
           status: payment.status,
           amount: tuitionAmount,
           studentCode,
-          studentName: tuition.student.fullName,
+          studentName: tuition.studentName,
           payerEmail: payment.payerEmail,
-          expiresAt: otp.expiresAt,
+          expiresAt: otp.record.expiresAt,
           message: `Mã OTP đã được gửi tới ${payment.payerEmail}. Vui lòng xác nhận trong 5 phút.`,
         },
       };
     } catch (err: any) {
-      await prisma.payment.update({
-        where: { id: payment.id },
+      if (err instanceof NotificationDeliveryUnknown) {
+        return { data: { paymentId: payment.id, status: 'PENDING', message: 'Chưa xác nhận gửi OTP. Kiểm tra hộp thư hoặc tạo yêu cầu mới khi mã hết hạn.' } };
+      }
+      await prisma.payment.updateMany({
+        where: { id: payment.id, status: 'PENDING' },
         data: { status: 'FAILED', failureReason: 'Không thể gửi email OTP' },
       });
       return { error: 'OTP_DELIVERY_FAILED' as const, status: 502, message: err.message || 'Không thể gửi mã OTP qua email' };
@@ -132,7 +172,7 @@ export const paymentService = {
 
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
     if (!payment) {
@@ -143,6 +183,9 @@ export const paymentService = {
       return { error: 'PAYMENT_ALREADY_COMPLETED' as const, status: 409, message: 'Giao dịch đã được hoàn tất trước đó' };
     }
 
+    if (['PROCESSING', 'REFUND_PENDING', 'REVIEW_REQUIRED'].includes(payment.status)) {
+      return { error: 'PAYMENT_PROCESSING', status: 202, message: 'Đang đối soát giao dịch' };
+    }
     if (payment.status !== 'PENDING') {
       return {
         error: 'PAYMENT_NOT_PENDING' as const,
@@ -153,6 +196,16 @@ export const paymentService = {
 
     const otpCheck = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
+      const current = await tx.payment.findUniqueOrThrow({
+        where: { id: paymentId }, include: { otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+      if (current.status !== 'PENDING') {
+        return { valid: false as const, error: 'PAYMENT_NOT_PENDING', message: 'Giao dịch không ở trạng thái chờ xác nhận' };
+      }
+      if (!current.otpCodes.length && pendingStatus(current) === 'EXPIRED') {
+        await tx.payment.update({ where: { id: paymentId }, data: { status: 'EXPIRED', failureReason: 'Không có mã OTP' } });
+        return { valid: false as const, error: 'OTP_EXPIRED', message: 'Hãy tạo yêu cầu thanh toán mới' };
+      }
       const result = await otpService.verifyOtp(paymentId, otpCode, tx);
       if (result.valid) {
         await tx.payment.update({ where: { id: paymentId }, data: { status: 'PROCESSING' } });
@@ -177,7 +230,7 @@ export const paymentService = {
         message: completedPayment.failureReason || 'Đang đối soát giao dịch',
       };
     }
-    await deliverReceipts().catch(() => undefined);
+    void deliverReceipts(paymentId).catch(() => undefined);
 
     return {
       data: {
@@ -185,8 +238,8 @@ export const paymentService = {
         transactionReference: completedPayment.transactionReference,
         status: completedPayment.status,
         amount,
-        studentCode: payment.student.studentCode,
-        studentName: payment.student.fullName,
+        studentCode: payment.studentCode,
+        studentName: payment.studentName,
         paidAt: completedPayment.updatedAt,
         message: 'Thanh toán học phí thành công',
       },
@@ -197,7 +250,7 @@ export const paymentService = {
     if (!isUuid(paymentId)) return null;
     const p = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
     return p ? formatPayment(p) : null;
   },
@@ -205,11 +258,9 @@ export const paymentService = {
   async getByAccount(accountId: string) {
     const list = await prisma.payment.findMany({
       where: { accountId: accountId.trim() },
-      include: { student: true, tuitionFee: true, otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { otpCodes: { orderBy: { createdAt: 'desc' }, take: 1 } },
       orderBy: { createdAt: 'desc' },
     });
     return list.map(formatPayment);
   },
 };
-
-

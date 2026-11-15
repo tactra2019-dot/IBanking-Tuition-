@@ -1,3 +1,5 @@
+import { app as student } from '../src/student-service';
+import { app as payment } from '../src/payment-service';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, createHmac } from 'node:crypto';
 import { once } from 'node:events';
@@ -15,6 +17,7 @@ const serviceToken = randomBytes(32).toString('hex');
 process.env.JWT_SECRET = jwtSecret;
 process.env.ACCOUNT_SERVICE_TOKEN = serviceToken;
 const databaseTests = process.env.RUN_CORE_DB_TESTS === '1';
+if (databaseTests) assert.match(new URL(process.env.DATABASE_URL || '').searchParams.get('schema') || '', /^micro_test_/);
 const userId = randomUUID();
 const accountId = `test-${userId}`;
 const username = accountId;
@@ -30,6 +33,8 @@ const authHeader = { authorization: `Bearer ${issueToken(userId).accessToken}` }
 const gatewayServer = gateway.listen(0, '127.0.0.1');
 const accountServer = account.listen(0, '127.0.0.1');
 const authServer = auth.listen(0, '127.0.0.1');
+const studentServer = student.listen(0, '127.0.0.1');
+const paymentServer = payment.listen(0, '127.0.0.1');
 function url(server: typeof gatewayServer, route: string) {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}${route}`;
 }
@@ -54,7 +59,13 @@ async function balance() {
 }
 
 before(async () => {
-  await Promise.all([gatewayServer, accountServer, authServer].map((server) => once(server, 'listening')));
+  await Promise.all([gatewayServer, accountServer, authServer, studentServer, paymentServer].map((server) => once(server, 'listening')));
+  process.env.AUTH_SERVICE_ORIGIN = url(authServer, '');
+  process.env.ACCOUNT_SERVICE_ORIGIN = url(accountServer, '');
+  process.env.ACCOUNT_SERVICE_URL = url(accountServer, '/api');
+  process.env.STUDENT_SERVICE_ORIGIN = url(studentServer, '');
+  process.env.PAYMENT_SERVICE_ORIGIN = url(paymentServer, '');
+  process.env.AUTH_SERVICE_TOKEN = randomBytes(32).toString('hex');
   if (databaseTests) {
     const hash = await hashPassword(password);
     await prisma.$transaction(async (tx) => {
@@ -91,6 +102,8 @@ after(async () => {
   gatewayServer.close();
   accountServer.close();
   authServer.close();
+  studentServer.close();
+  paymentServer.close();
   try {
     if (databaseTests) {
       await prisma.$transaction([

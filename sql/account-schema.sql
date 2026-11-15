@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS accounts (
   id varchar(50) PRIMARY KEY,
-  user_id uuid NOT NULL UNIQUE REFERENCES users(id),
+  user_id uuid NOT NULL UNIQUE,
   balance bigint NOT NULL
 );
 
@@ -43,4 +43,3 @@ END;
 $$;
 
 COMMIT;
-

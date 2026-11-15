@@ -53,7 +53,7 @@ export function PaymentPage() {
   } = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema) });
   const lookup = useMutation({ mutationFn: studentApi.lookup });
   const create = useMutation({
-    mutationFn: () => paymentApi.create(student!.id, key.current),
+    mutationFn: () => paymentApi.create(student!, key.current),
     onSuccess: (p) => {
       query.invalidateQueries({ queryKey: ["payments"] });
       navigate(`/payment/${p.id}/otp`);

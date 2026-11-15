@@ -1,30 +1,24 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@ibanking/db';
 import crypto from 'node:crypto';
 import { prisma } from '../../shared/prisma';
 
 const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_OTP_ATTEMPTS = 5;
 
+function otpDigest(paymentId: string, code: string) {
+  return crypto.createHmac('sha256', otpSecret()).update(paymentId + ':' + code).digest('hex');
+}
+
+export function otpSecret() {
+  const secret = process.env.OTP_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) throw new Error('Thiếu OTP_SECRET (tối thiểu 32 byte)');
+  return secret;
+}
+
 export const otpService = {
-  async generateUniqueOtp(paymentId: string) {
-    await prisma.otpCode.updateMany({
-      where: { paymentId, isUsed: false },
-      data: { isUsed: true },
-    });
-
-    for (let i = 0; i < 20; i++) {
-      const code = String(crypto.randomInt(100000, 1000000));
-      const activeCollision = await prisma.otpCode.findFirst({
-        where: { code, isUsed: false, expiresAt: { gt: new Date() } },
-      });
-      if (!activeCollision) {
-        return prisma.otpCode.create({
-          data: { paymentId, code, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
-        });
-      }
-    }
-
-    throw new Error('Không thể sinh mã OTP duy nhất');
+  prepare(paymentId: string) {
+    const code = String(crypto.randomInt(100000, 1000000));
+    return { code, record: { code: otpDigest(paymentId, code), expiresAt: new Date(Date.now() + OTP_TTL_MS) } };
   },
 
   async verifyOtp(paymentId: string, inputCode: string, db: Prisma.TransactionClient = prisma) {
@@ -45,7 +39,9 @@ export const otpService = {
       return { valid: false as const, error: 'OTP_EXPIRED', message: 'Mã OTP đã hết hạn (quá 5 phút)' };
     }
 
-    if (otp.code !== inputCode.trim()) {
+    const supplied = Buffer.from(otpDigest(paymentId, inputCode.trim()), 'hex');
+    const expected = Buffer.from(otp.code, 'hex');
+    if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) {
       const nextAttempts = otp.attempts + 1;
       const exhausted = nextAttempts >= MAX_OTP_ATTEMPTS;
 
@@ -81,4 +77,3 @@ export const otpService = {
     return { valid: true as const, otp };
   },
 };
-

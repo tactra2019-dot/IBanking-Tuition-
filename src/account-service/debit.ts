@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@ibanking/db';
 import { prisma } from '../shared/prisma';
 
 export interface DebitInput {
@@ -80,4 +80,3 @@ export async function changeBalance(
     return updated.balance;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 }
-

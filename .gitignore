@@ -6,3 +6,5 @@ dist/
 
 notification-service/target/
 frontend/*.tsbuildinfo
+
+.env.*.local

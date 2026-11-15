@@ -176,7 +176,7 @@ export function OtpPage() {
             Gửi lại mã {cooldown > 0 ? `(${cooldown}s)` : ""}
           </Button>
           {!payment.data.canResend && (
-            <p className="caption">Không thể gửi lại mã cho giao dịch này.</p>
+            <Link to="/payment" className="back-link">Tạo yêu cầu thanh toán mới</Link>
           )}
           {resend.isError && (
             <ErrorState message={errorMessage(resend.error)} />

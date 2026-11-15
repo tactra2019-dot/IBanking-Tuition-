@@ -1,296 +1,69 @@
-# Phân Hệ Thanh Toán Học Phí iBanking (TDTU)
+# iBanking · Thanh toán học phí TDTU
 
-Dự án giữa kỳ môn **Kiến trúc hướng dịch vụ (SOA - CS504070)**.
-Xây dựng hệ thống:  **Payment & Database**.
-
----
-
-## 1. Phạm Vi Sở Hữu 
-
-- **Database**:
-  - Thiết kế và quản lý toàn bộ cơ sở dữ liệu: bảng `students`, `tuition_fees`, `payments`, `otp_codes`.
-  - Cung cấp file DDL thuần PostgreSQL độc lập: [sql/schema.sql](sql/schema.sql).
-  - Quản lý migration và schema qua Prisma ORM: [prisma/schema.prisma](prisma/schema.prisma).
-  - Seed dữ liệu mẫu sinh viên TDTU: [prisma/seed.ts](prisma/seed.ts).
-- **Student Service (Port 4001)**:
-  - Tra cứu thông tin sinh viên theo MSSV (`GET /api/students/:studentCode`).
-  - Tra cứu khoản học phí còn nợ của sinh viên (`GET /api/tuitions/student/:studentCode`).
-- **Payment Service (Port 4002)**:
-  - Tạo yêu cầu giao dịch trạng thái `PENDING` (`POST /api/payments/create-intent`).
-  - Sinh mã OTP 6 số ngẫu nhiên: thời hạn 5 phút, không trùng với OTP còn hiệu lực của giao dịch khác, chỉ dùng thành công 1 lần, khóa sau 5 lần nhập sai.
-  - Gửi mã OTP và email biên lai sau khi hoàn tất (qua [mailer.service.ts](src/payment-service/mailer/mailer.service.ts) hoặc webhook Notification Service của TV3).
-  - Xác thực OTP và hoàn tất thanh toán (`POST /api/payments/confirm-otp`).
-  - Tra cứu chi tiết giao dịch (`GET /api/payments/:id`) và lịch sử nộp tiền (`GET /api/payments/account/:accountId`).
-- **Mock Account Service (Port 4003)**:
-  - Giả lập Account Service của TV1 (Thành) để test trừ tiền (`POST /api/accounts/deduct`) và kiểm tra số dư (`GET /api/accounts/:id`).
-
----
-
-## 2. Kiến Trúc Cổng & Dịch Vụ
-
-```
-[ Frontend: React - TV3 (Tài) ]  ───►  [ API Gateway - TV1 (Thành) ]
-                                             │
-      ┌──────────────────────────────────────┼──────────────────────────────────────┐
-      ▼                                      ▼                                      ▼
-[ Student Service ]                   [ Payment Service ]                 [ Account Service ]
-  Port: 4001                            Port: 4002                          Port: 4003 (Mock)
-  Swagger: /docs                        Swagger: /docs                      Owner: TV1 (Thành)
-  Owner: TV2 (Phước)                    Owner: TV2 (Phước)
-      │                                      │
-      └──────────────────┬───────────────────┘
-                         ▼
-             [ PostgreSQL Container ]
-               Host Port: 5433
-               DB: ibanking_db
-```
-
-- **Swagger UI Trực Tiếp**:
-  - Student Service: `http://localhost:4001/docs` (JSON: `http://localhost:4001/docs.json`)
-  - Payment Service: `http://localhost:4002/docs` (JSON: `http://localhost:4002/docs.json`)
-
----
-
-## 3. Sơ Đồ Cơ Sở Dữ Liệu (ERD)
+Frontend React gọi Gateway. Gateway xác thực JWT, chỉ chuyển tiếp các route công khai được khai báo và không có kết nối DB. Auth, Account, Student, Payment và Notification chạy riêng.
 
 ```mermaid
-erDiagram
-    STUDENT ||--o{ TUITION_FEE : "có học phí"
-    STUDENT ||--o{ PAYMENT : "nhận thanh toán"
-    TUITION_FEE ||--o{ PAYMENT : "thanh toán qua"
-    PAYMENT ||--o{ OTP_CODE : "xác thực bởi"
-
-    STUDENT {
-        uuid id PK
-        varchar student_code UK "MSSV duy nhất"
-        varchar full_name "Họ và tên"
-        varchar email "Email sinh viên"
-        varchar phone "SĐT"
-        varchar faculty "Khoa / Ngành"
-    }
-
-    TUITION_FEE {
-        uuid id PK
-        uuid student_id FK
-        varchar semester "Học kỳ (HK1_2026_2027)"
-        decimal amount "Số tiền học phí"
-        TuitionStatus status "UNPAID | PAID"
-    }
-
-    PAYMENT {
-        uuid id PK
-        varchar account_id "Tài khoản người nộp tiền"
-        uuid student_id FK
-        uuid tuition_fee_id FK
-        decimal amount "Số tiền thanh toán"
-        PaymentStatus status "PENDING | COMPLETED | FAILED | EXPIRED"
-        varchar transaction_reference UK "Mã giao dịch duy nhất"
-        varchar payer_email "Email người nộp"
-        text failure_reason "Lý do thất bại"
-    }
-
-    OTP_CODE {
-        uuid id PK
-        uuid payment_id FK
-        varchar code "Mã OTP 6 số"
-        timestamp expires_at "Hạn 5 phút"
-        boolean is_used "Đã dùng hay chưa"
-        int attempts "Số lần thử sai (max 5)"
-    }
+flowchart LR
+    Web[React] --> Gateway
+    Gateway --> Auth
+    Gateway --> Account
+    Gateway --> Student
+    Gateway --> Payment
+    Auth -->|Mã tài khoản| Account
+    Account -->|Hồ sơ nội bộ| Auth
+    Account -->|Lịch sử| Payment
+    Payment -->|Quyền sở hữu, debit, refund| Account
+    Payment -->|Đọc, giữ chỗ, chốt học phí| Student
+    Payment -->|OTP, biên nhận| Notification
+    Notification --> Mailpit
+    Auth --> Users[(users)]
+    Account --> Ledger[(accounts, account_debits)]
+    Student --> Tuition[(students, tuition_fees)]
+    Payment --> Payments[(payments, otp_codes)]
 ```
 
-> **Chốt chặn an toàn cấp Database**:
-> `idx_unique_completed_payment_per_tuition` (`CREATE UNIQUE INDEX ON payments(tuition_fee_id) WHERE status = 'COMPLETED'`) đảm bảo tuyệt đối không có 2 bản ghi `COMPLETED` cho cùng 1 khoản học phí.
+Bốn service dùng chung PostgreSQL server và schema, với bốn PostgreSQL role riêng. Mỗi role chỉ có quyền trên bảng service sở hữu. ID giữa service là tham chiếu theo API. Payment lưu bản chụp MSSV, tên và học kỳ để lịch sử không phụ thuộc dữ liệu sinh viên hiện hành.
 
----
+## Demo mới trên Windows
 
-## 4. Hướng Dẫn Cài Đặt & Khởi Chạy
+1. Tạo file cấu hình riêng từ `.env.example`. Đặt mật khẩu PostgreSQL, `DEMO_PASSWORD` và các khóa JWT, Account, Auth, Student, OTP, Notification riêng, tối thiểu 32 byte mỗi khóa. Ví dụ tạo khóa bằng `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Nếu đã có demo cũ, chọn project Compose, port và schema mới, ví dụ `micro_demo_v2`. Giữ các cấu hình cũ để truy cập dữ liệu trước đây.
+2. Lưu cấu hình vào `.env.micro.local` rồi nạp biến vào PowerShell. `DATABASE_URL` là kết nối admin chỉ dùng để áp schema, tạo role và nạp dữ liệu mẫu.
 
-### Yêu cầu tiên quyết
-- Node.js >= 20.x
-- Docker Desktop đang bật
+   ```powershell
+   Get-Content .env.micro.local | Where-Object { $_ -match '^[A-Z_][A-Z0-9_]*=' } | ForEach-Object {
+     $name, $value = $_ -split '=', 2
+     [Environment]::SetEnvironmentVariable($name, $value.Trim('"'), 'Process')
+   }
+   docker compose -p ibanking-v2 -f docker-compose.yml -f compose.integration.yml up -d --wait postgres mailpit notification
+   npm ci
+   npm run db:generate
+   npm run db:push -- --skip-generate
+   npm run db:account
+   npm run db:recovery
+   npm run db:roles
+   npm run seed:account
+   npm run seed:integration
+   npm run build
+   ```
 
-### Bước 1: Khởi động PostgreSQL Container
-```bash
-docker compose up -d
-```
-Container `ibanking-postgres` sẽ chạy tại `localhost:5433`, database `ibanking_db`.
+3. Nạp bốn biến `*_DATABASE_URL` từ file local do `db:roles` tạo. Với Node chạy trên host, giữ URL PostgreSQL loopback. Khi dùng Compose cho cả backend, đổi hostname trong bốn URL thành `postgres`, cổng thành `5432`, rồi chạy Compose cùng file `compose.microservices.yml`. Gateway là tiến trình Node duy nhất được publish. Có thể dừng riêng một service bằng `docker compose ... stop payment` và bật lại bằng `docker compose ... start payment`.
+4. Nếu chạy Node trên host, `npm run dev` khởi chạy năm tiến trình Node. Để chạy độc lập, đặt `DATABASE_URL` bằng URL role tương ứng cho từng terminal rồi dùng `npm run dev:auth`, `dev:account`, `dev:student`, `dev:payment` hoặc `dev:gateway`. Gateway không cần URL DB.
+5. Cài frontend bằng `npm ci --prefix frontend`. Đặt `VITE_DEMO_MODE=false`, `VITE_API_CONTRACT_CONFIRMED=true` và `VITE_API_BASE_URL=http://localhost:4000/api` trong `frontend/.env`. Chạy `npm run dev:ui --prefix frontend`. Đăng nhập `demo1` với mật khẩu đã đặt lúc seed. Tra cứu `521H9001`, kiểm tra khoản 7 triệu, lấy OTP từ Mailpit và xem kết quả cùng lịch sử. Có thể dùng `521H9002` để thử giao dịch khác.
+6. URL mặc định gồm [Web](http://localhost:5173), [Gateway health](http://localhost:4000/health), [Swagger Gateway](http://localhost:4000/docs/), [Mailpit](http://localhost:8025), Swagger [Auth](http://127.0.0.1:4004/docs/), [Account](http://127.0.0.1:4003/docs/), [Student](http://127.0.0.1:4001/docs/) và [Payment](http://127.0.0.1:4002/docs/) khi các service chạy trên host. Trong Compose, cổng Swagger nội bộ được giữ trong mạng container.
 
-### Bước 2: Cài đặt thư viện
-```bash
-npm install
-```
+## Luồng ghi nhận thanh toán
 
-### Bước 3: Đồng bộ Schema & Seed Dữ Liệu
-```bash
-# Đẩy schema Prisma vào PostgreSQL
-npm run db:push
+- Payment dùng khóa idempotency theo tài khoản để trả cùng intent. Frontend gửi lại đúng ID học phí và số tiền đã hiển thị. OTP lưu HMAC, thời hạn năm phút, tiêu thụ cùng lúc ghi trạng thái `PROCESSING`.
+- Student giữ chỗ khoản phí theo `paymentId` trước debit. Account kiểm tra và cập nhật số dư nguyên tử, lưu kết quả debit/refund theo cùng ID.
+- Nếu mất phản hồi debit, Payment tiếp tục đối soát và yêu cầu lại với cùng ID. Khi Student đã xác nhận `PAID` cho ID đó, Payment mới ghi `COMPLETED`. Nếu cần bù trừ, `REFUND_PENDING` được lưu trước refund. Sau xác nhận refund và nhả giữ chỗ, Payment mới kết thúc thất bại.
+- Mailpit nhận thư thử nghiệm. Payment cần cấu hình kênh email, trừ khi chọn rõ `MAIL_MODE=mock` cho test riêng. Biên nhận được gửi sau khi commit và có thể được gửi lại nếu mất xác nhận.
 
-# Nạp dữ liệu mẫu sinh viên TDTU
-npm run seed
-```
+- Payment và bản ghi HMAC của OTP được tạo nguyên tử. Nếu tiến trình dừng trước khi gửi email, OTP hết hạn sau năm phút. Người dùng tạo yêu cầu mới với khóa mới. Worker kết thúc intent cũ thiếu OTP khi đã quá năm phút.
+- Các lỗi HTTP trong quá trình đối soát được thử lại tối đa 30 lần với khoảng chờ tăng đến 60 giây. `REVIEW_REQUIRED` lưu bước lỗi và dừng retry tự động. Khi vận hành, dùng mã giao dịch để đối chiếu ledger Account và `reserved_payment_id`/trạng thái học phí tại Student. Nếu đã xác nhận Student ghi PAID cho đúng ID, khôi phục xử lý commit idempotent. Nếu cần hoàn tiền, xác minh Student chưa commit và đã chặn khả năng commit muộn trước khi chạy bù trừ với cùng ID. Nếu Student xác nhận khoản phí đã PAID cho một paymentId khác sau debit, Payment ghi REFUND_PENDING và tự bù trừ. Các trường hợp chưa xác định được kết quả commit được giữ để đối soát.
+- Healthcheck container xác nhận tiến trình HTTP phản hồi. Phép thử đăng nhập và thanh toán xuyên service kiểm tra thêm kết nối DB, role và SMTP. Notification được build thành JAR và chạy trong image Java 17 riêng. `OTP_SECRET` phải có ít nhất 32 byte để Payment khởi động.
 
-**Dữ liệu mẫu đã seed:**
-| MSSV | Họ và tên | Khoa | Học kỳ | Số tiền (VNĐ) | Trạng thái |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `521H0001` | Nguyễn Văn An | CNTT | HK1_2026_2027 | 12.500.000 | `UNPAID` |
-| `521H0002` | Trần Thị Bích | QTKD | HK1_2026_2027 | 10.800.000 | `UNPAID` |
-| `521H0003` | Lê Hoàng Nam | TCNH | HK1_2026_2027 | 14.000.000 | `PAID` |
-| `521H0004` | Phạm Minh Đức | KTPM | HK1_2026_2027 | 15.200.000 | `UNPAID` |
-| `521H0005` | Đặng Thu Hà | NNA | HK1_2026_2027 | 9.500.000 | `UNPAID` |
+## Kiểm thử
 
-### Bước 4: Khởi chạy các Service
-```bash
-# Chạy đồng loạt Student Service (4001), Payment Service (4002) và Mock Account (4003)
-npm run dev
-```
+Chạy `npm run build` và `npm run build --prefix frontend`. E2E cần PostgreSQL dùng schema tên `micro_test_*`, Notification và Mailpit. Đặt `MAILPIT_ORIGIN` nếu dùng cổng riêng. Chạy `npm run test:e2e`. Bộ test tạo dữ liệu thử mới và đọc OTP từ Mailpit. `npm test` chạy kiểm tra core. Đặt `RUN_CORE_DB_TESTS=1` cùng schema thử để kiểm tra PostgreSQL. `npm run test:processes` kiểm tra các tiến trình riêng và cần bốn URL role thử nghiệm. Các file test TV2 cũ được giữ làm tài liệu đối chiếu.
 
-Hoặc chạy từng service độc lập:
-```bash
-npm run dev:student       # Port 4001
-npm run dev:payment       # Port 4002
-npm run dev:account-mock  # Port 4003
-```
-
----
-
-## 5. Danh Sách API Chi Tiết
-
-### A. Student Service (`http://localhost:4001/api`)
-
-#### 1. Tra cứu sinh viên theo MSSV
-- **Endpoint**: `GET /students/:studentCode`
-- **Ví dụ**: `GET /students/521H0001`
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "id": "c1387d7b-232a-43d9-9594-8ef8152c1ef4",
-    "studentCode": "521H0001",
-    "fullName": "Nguyễn Văn An",
-    "email": "521h0001@student.tdtu.edu.vn",
-    "phone": "0901234567",
-    "faculty": "Công nghệ thông tin"
-  }
-}
-```
-
-#### 2. Lấy thông tin khoản học phí cần nộp
-- **Endpoint**: `GET /tuitions/student/:studentCode`
-- **Ví dụ**: `GET /tuitions/student/521H0001`
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "id": "936fc3ae-d261-4541-b883-fa349d4ceb4f",
-    "studentId": "c1387d7b-232a-43d9-9594-8ef8152c1ef4",
-    "studentCode": "521H0001",
-    "studentName": "Nguyễn Văn An",
-    "faculty": "Công nghệ thông tin",
-    "semester": "HK1_2026_2027",
-    "amount": 12500000,
-    "status": "UNPAID"
-  }
-}
-```
-
----
-
-### B. Payment Service (`http://localhost:4002/api`)
-
-#### 1. Tạo yêu cầu giao dịch thanh toán & Sinh OTP
-- **Endpoint**: `POST /payments/create-intent`
-- **Request Body**:
-```json
-{
-  "accountId": "ACC-001",
-  "studentCode": "521H0001",
-  "tuitionFeeId": "936fc3ae-d261-4541-b883-fa349d4ceb4f",
-  "payerEmail": "phu@tdtu.edu.vn"
-}
-```
-- **Response `201 Created`**:
-```json
-{
-  "success": true,
-  "message": "Mã OTP đã được gửi tới phu@tdtu.edu.vn. Vui lòng xác nhận trong 5 phút.",
-  "data": {
-    "paymentId": "7c8e9b01-fa23-4df5-9112-abcdef123456",
-    "transactionReference": "TXN-1794033675510-2232",
-    "status": "PENDING",
-    "amount": 12500000,
-    "studentCode": "521H0001",
-    "studentName": "Nguyễn Văn An",
-    "payerEmail": "phu@tdtu.edu.vn",
-    "expiresAt": "2026-11-07T07:46:15.510Z"
-  }
-}
-```
-
-#### 2. Xác thực OTP & Hoàn tất thanh toán
-- **Endpoint**: `POST /payments/confirm-otp`
-- **Request Body**:
-```json
-{
-  "paymentId": "7c8e9b01-fa23-4df5-9112-abcdef123456",
-  "otpCode": "948275"
-}
-```
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "message": "Thanh toán học phí thành công",
-  "data": {
-    "paymentId": "7c8e9b01-fa23-4df5-9112-abcdef123456",
-    "transactionReference": "TXN-1794033675510-2232",
-    "status": "COMPLETED",
-    "amount": 12500000,
-    "studentCode": "521H0001",
-    "studentName": "Nguyễn Văn An",
-    "paidAt": "2026-11-07T07:41:20.123Z"
-  }
-}
-```
-
-#### 3. Lịch sử giao dịch của tài khoản
-- **Endpoint**: `GET /payments/account/:accountId`
-- **Ví dụ**: `GET /payments/account/ACC-001`
-
----
-
-## 6. Hướng Dẫn Sử Dụng Postman Collection
-
-File [postman_collection.json](postman_collection.json) đã được chuẩn bị sẵn ở thư mục gốc:
-1. Mở Postman $\rightarrow$ Chọn **Import** $\rightarrow$ Kéo thả file `postman_collection.json`.
-2. Chạy request `1.3 Lấy khoản học phí`: Script tự động gán biến `tuition_fee_id`.
-3. Chạy request `2.1 Tạo yêu cầu thanh toán`: Script tự động gán biến `payment_id`.
-4. Xem mã OTP được in ra tại console terminal của `payment-service` và nhập vào request `2.4 Xác thực OTP`.
-
----
-
-## 7. Chiến Lược Concurrency, Transaction Boundary & Kiểm Thử Tự Động
-
-### Chiến lược chống Race Condition & Đảm bảo Nhất quán
-1. **Chống 2 người cùng đóng 1 MSSV**: Khóa dòng độc quyền `SELECT ... FOR UPDATE` trên bảng `tuition_fees` bên trong `prisma.$transaction`, kết hợp Partial Unique Index `idx_unique_completed_payment_per_tuition` ở cấp PostgreSQL.
-2. **Chống 1 tài khoản gửi nhiều giao dịch vượt số dư (Double-spending)**: Tuần tự hóa các giao dịch của cùng một `account_id` bằng `pg_advisory_xact_lock(hashtext(account_id))` trước khi gọi trừ tiền.
-3. **Chống Double-click / Dùng lại OTP đồng thời**: Cập nhật nguyên tử `otpCode.updateMany({ where: { id, isUsed: false }, data: { isUsed: true } })` + khóa dòng `payments ... FOR UPDATE`.
-4. **Transaction Boundary & Rollback Bù Trừ (Compensation)**: Nếu trừ tiền bên Account Service thành công nhưng DB lỗi trước khi commit `PAID`, transaction PostgreSQL tự động rollback trạng thái học phí về `UNPAID` và Payment Service tự động gọi `POST /accounts/refund` hoàn trả 100% số dư. Email biên lai chỉ được gửi **sau khi** DB đã commit thành công.
-
-### Chạy toàn bộ bộ kiểm thử
-```bash
-# Chạy trọn bộ tất cả bài test (Student + Payment/OTP + Swagger + 3 bài Concurrency/Rollback)
-npm test
-
-# Chỉ chạy bộ test Concurrency & Rollback (Duplicate MSSV + Double-spending + Compensation)
-npm run test:concurrency
-```
-
-
-## Hướng dẫn TV1
-
-Xem [Auth, Account và Gateway](docs/tv1.md) để chạy chế độ TV1, Swagger, Postman và test PostgreSQL. Xem [contract Payment–Account](docs/payment-account-contract.md) để tích hợp debit và hoàn tiền.
-
-Xem [kết quả kiểm thử TV1](docs/tv1-test-report.md) để phân biệt kết quả trên Account PostgreSQL và bộ hồi quy dùng Mock Account.
+Không áp `db:push` lên schema demo cũ. Dữ liệu demo hiện tại có thể tiếp tục chạy trên phiên bản cũ. Chuyển lịch sử sang stack mới cần kế hoạch backfill bản chụp Payment và đối soát các giao dịch đang mở trước khi đổi đường truy cập.

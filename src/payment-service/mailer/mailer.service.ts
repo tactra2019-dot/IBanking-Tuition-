@@ -2,15 +2,20 @@ import nodemailer from 'nodemailer';
 
 let transporterPromise: Promise<nodemailer.Transporter> | null = null;
 
+export class NotificationDeliveryUnknown extends Error {}
+
 function getTransporter() {
+  if (!process.env.SMTP_HOST && process.env.MAIL_MODE !== 'mock') {
+    throw new Error('Chưa cấu hình kênh gửi email');
+  }
   if (!transporterPromise) {
     transporterPromise = Promise.resolve(
-      process.env.SMTP_HOST && process.env.SMTP_USER
+      process.env.SMTP_HOST
         ? nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: Number(process.env.SMTP_PORT) || 587,
             secure: false,
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
           })
         : nodemailer.createTransport({ jsonTransport: true })
     );
@@ -20,19 +25,20 @@ function getTransporter() {
 
 async function postNotification(endpoint: string, payload: Record<string, unknown>): Promise<boolean> {
   if (!process.env.NOTIFICATION_SERVICE_URL) return false;
-  try {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // Gửi lại cùng eventId khi phản hồi bị mất.
     const res = await fetch(`${process.env.NOTIFICATION_SERVICE_URL}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Key': process.env.NOTIFICATION_INTERNAL_KEY || '' },
       signal: AbortSignal.timeout(5000),
       body: JSON.stringify(payload),
-    });
-    if (res.ok) return true;
-    throw new Error('Notification từ chối yêu cầu');
-  } catch {
-    throw new Error('Chưa xác nhận gửi email từ Notification');
+    }).catch(() => undefined);
+    if (res?.ok) return true;
+    if (res && res.status < 500 && ![408, 429].includes(res.status)) {
+      throw new Error('Notification từ chối yêu cầu');
+    }
   }
-  return false;
+  throw new NotificationDeliveryUnknown('Chưa xác nhận gửi email từ Notification');
 }
 
 export const mailerService = {
@@ -59,8 +65,5 @@ export const mailerService = {
       subject: `[iBanking] Biên lai thanh toán học phí thành công (${paymentRef})`,
       text: `Thanh toán thành công học phí cho SV ${studentName} (${studentCode}). Mã GD: ${paymentRef}. Số tiền: ${amount.toLocaleString()} VNĐ.`,
     });
-    console.log(`[RECEIPT] Sent to ${to} | Ref: ${paymentRef} | Amount: ${amount}`);
   },
 };
-
-

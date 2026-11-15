@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  output = "../node_modules/@ibanking/db"
 }
 
 enum TuitionStatus {
@@ -15,6 +16,7 @@ enum TuitionStatus {
 enum PaymentStatus {
   PROCESSING
   REFUND_PENDING
+  REVIEW_REQUIRED
   PENDING
   COMPLETED
   FAILED
@@ -32,7 +34,6 @@ model Student {
   updatedAt   DateTime     @updatedAt @map("updated_at")
 
   tuitionFees TuitionFee[]
-  payments    Payment[]
 
   @@map("students")
 }
@@ -42,12 +43,12 @@ model TuitionFee {
   studentId String        @map("student_id") @db.Uuid
   semester  String        @db.VarChar(50)
   amount    Decimal       @db.Decimal(12, 2)
+  reservedPaymentId String? @map("reserved_payment_id") @db.Uuid
   status    TuitionStatus @default(UNPAID)
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")
 
   student  Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  payments Payment[]
 
   @@unique([studentId, semester])
   @@index([studentId, status])
@@ -63,15 +64,21 @@ model Payment {
   status               PaymentStatus @default(PENDING)
   transactionReference String        @unique @map("transaction_reference") @db.VarChar(50)
   payerEmail           String        @map("payer_email") @db.VarChar(100)
+  studentCode          String?       @map("student_code")
+  studentName          String?       @map("student_name")
+  semester             String?
+  idempotencyKey       String?       @map("idempotency_key") @db.VarChar(80)
+  debitStarted         Boolean       @default(false) @map("debit_started")
+  recoveryAttempts     Int           @default(0) @map("recovery_attempts")
+  nextRetryAt          DateTime?     @map("next_retry_at")
   receiptSent          Boolean       @default(false) @map("receipt_sent")
   failureReason        String?       @map("failure_reason") @db.Text
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
 
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  tuitionFee TuitionFee @relation(fields: [tuitionFeeId], references: [id], onDelete: Restrict)
   otpCodes   OtpCode[]
 
+  @@unique([accountId, idempotencyKey])
   @@index([accountId])
   @@index([tuitionFeeId, status])
   @@map("payments")
@@ -80,7 +87,7 @@ model Payment {
 model OtpCode {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentId String   @map("payment_id") @db.Uuid
-  code      String   @db.VarChar(10)
+  code      String   @db.VarChar(64)
   expiresAt DateTime @map("expires_at")
   isUsed    Boolean  @default(false) @map("is_used")
   attempts  Int      @default(0)
@@ -100,7 +107,6 @@ model User {
   fullName     String   @map("full_name") @db.VarChar(100)
   email        String   @db.VarChar(100)
   phone        String   @db.VarChar(20)
-  account      Account?
 
   @@map("users")
 }
@@ -109,7 +115,6 @@ model Account {
   id      String         @id @db.VarChar(50)
   userId  String         @unique @map("user_id") @db.Uuid
   balance BigInt
-  user    User           @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   debits  AccountDebit[]
 
   @@map("accounts")
@@ -125,5 +130,3 @@ model AccountDebit {
 
   @@map("account_debits")
 }
-
-
