@@ -1,69 +1,460 @@
-# iBanking · Thanh toán học phí TDTU
+# iBanking Tuition Payment System
 
-Frontend React gọi Gateway. Gateway xác thực JWT, chỉ chuyển tiếp các route công khai được khai báo và không có kết nối DB. Auth, Account, Student, Payment và Notification chạy riêng.
+**Đồ án giữa kỳ Service-Oriented Architecture (SOA) – CS504070 · Trường Đại học Tôn Đức Thắng (TDTU)**
+
+Ứng dụng mô phỏng thanh toán **toàn bộ** học phí qua iBanking. Người dùng đăng nhập tài khoản ngân hàng, tra cứu sinh viên bằng MSSV (có thể là chính mình hoặc người khác), xem học phí chưa thanh toán, xác nhận giao dịch bằng OTP email và theo dõi số dư, trạng thái, lịch sử. Hệ thống phục vụ học tập và trình diễn; không chuyển tiền thật.
+
+## Mục lục
+
+- [Thành viên và phân công](#thành-viên-và-phân-công)
+- [Chức năng và công nghệ](#chức-năng-và-công-nghệ)
+- [Kiến trúc và trách nhiệm](#kiến-trúc-và-trách-nhiệm)
+- [Cấu trúc dự án và thiết kế dữ liệu](#cấu-trúc-dự-án-và-thiết-kế-dữ-liệu)
+- [Yêu cầu và cấu hình môi trường](#yêu-cầu-và-cấu-hình-môi-trường)
+- [Chạy bằng Docker Compose hoặc local](#chạy-bằng-docker-compose-hoặc-local)
+- [API qua Gateway](#api-qua-gateway)
+- [Quy trình thanh toán và tính nhất quán](#quy-trình-thanh-toán-và-tính-nhất-quán)
+- [Hướng dẫn demo](#hướng-dẫn-demo)
+- [Build và kiểm thử](#build-và-kiểm-thử)
+- [Giao diện, tài liệu và tình trạng dự án](#giao-diện-tài-liệu-và-tình-trạng-dự-án)
+- [Bảo mật và giới hạn hiện tại](#bảo-mật-và-giới-hạn-hiện-tại)
+
+## Thành viên và phân công
+
+| Thành viên | Vai trò | Thành phần trong repo | Nhiệm vụ chính |
+| --- | --- | --- | --- |
+| Lê Đỗ Minh Thành | Backend Core & Security | `src/auth-service/`, `src/account-service/`, `src/api-gateway/`, `src/shared/` | Login, JWT, Gateway, quyền truy cập, xử lý số dư và đồng thời ở Account |
+| Phan Đình Phước | Payment & Database | `src/student-service/`, `src/payment-service/`, `prisma/`, `sql/` | Student/Tuition, thanh toán, OTP, transaction, recovery và kiểm soát thanh toán trùng |
+| Võ Tấn Tài | Frontend & Notification | `frontend/`, `notification-service/` | React UI/UX, tích hợp API, email OTP/biên nhận và demo |
+
+Bảng phản ánh phân công nhóm và thành phần hiện có; Git history không được dùng để quy kết tác giả của từng dòng code.
+
+## Chức năng và công nghệ
+
+**API thật đã triển khai:** đăng nhập username/password, JWT, hồ sơ và số dư tài khoản, tra cứu sinh viên/học phí, tạo intent thanh toán toàn bộ, OTP email, debit/refund, cập nhật PAID, lịch sử và biên nhận. Có cơ chế idempotency, khóa dòng, retry và đối soát khi kết quả giữa các service chưa rõ. Người dùng có thể thanh toán học phí của MSSV khác; debit luôn từ tài khoản đã đăng nhập.
+
+**Chế độ mock:** `frontend/mock/` cung cấp API và dữ liệu trong bộ nhớ để xem UI độc lập. Các hành vi mock như gửi lại OTP không chứng minh API thật hỗ trợ cùng hành vi. **Chưa xác minh:** kiểm thử thao tác và bố cục toàn bộ UI trực tiếp trên trình duyệt desktop/mobile; xem [báo cáo QA](docs/FULL_SYSTEM_TEST_REPORT.md).
+
+| Layer | Technology | Purpose |
+| --- | --- | --- |
+| Frontend | React 19, TypeScript, Vite 7, Tailwind CSS 4, React Router, Axios | Giao diện và gọi Gateway |
+| Backend services và Gateway | Node.js, TypeScript, Express, Prisma Client | Năm tiến trình HTTP độc lập; bốn service dữ liệu và một Gateway |
+| Database | PostgreSQL 16 trong Compose, Prisma schema, SQL | Dữ liệu nghiệp vụ, transaction, constraint và role theo service |
+| Authentication | scrypt có salt; JWT HS256, hạn 15 phút | Đăng nhập và định danh request |
+| Notification | Java 17, Spring Boot 3.5.16, Spring Mail | Gửi OTP và biên nhận qua SMTP |
+| Deployment/demo | Dockerfile, Docker Compose, Mailpit | Chạy service và hộp thư thử nghiệm local |
+| Testing | Node test runner, Vitest/Testing Library, JUnit, Mailpit | Unit, API, E2E, concurrency và email |
+| Developer tools | npm scripts, Maven Wrapper, Swagger UI/OpenAPI | Build, test và xem contract |
+
+## Truy cập bản QA trên máy này
+
+Bản QA của nhánh `fix/microservices-architecture` đã được chạy và kiểm thử ngày **15/11/2026**. Nếu các tiến trình vẫn đang hoạt động:
+
+| Mục | Địa chỉ / thông tin |
+| --- | --- |
+| Giao diện | [http://127.0.0.1:5173/](http://127.0.0.1:5173/) |
+| Gateway health | [http://127.0.0.1:4010/health](http://127.0.0.1:4010/health) |
+| Swagger Gateway | [http://127.0.0.1:4010/docs/](http://127.0.0.1:4010/docs/) |
+| Mailpit, nơi xem OTP | [http://127.0.0.1:8026/](http://127.0.0.1:8026/) |
+| Tài khoản demo | `demo1` hoặc `demo2` |
+| Mật khẩu demo | Giá trị `DEMO_PASSWORD` trong file `.env` local; không lưu mật khẩu vào Git |
+| Email nhận OTP của bản QA | `demo1@ibanking.test`, do `DEMO_EMAIL` trong `.env` quyết định |
+| MSSV chưa thanh toán | `521H9001` (7.000.000 VND), `521H9002` (5.000.000 VND), `521H9003` (12.000.000 VND) khi vừa seed |
+
+Cả `demo1` và `demo2` dùng cùng `DEMO_PASSWORD`. Seed hiện dùng một giá trị `DEMO_EMAIL` cho cả hai tài khoản, nên hãy lọc thư theo **mã giao dịch mới nhất** trong Mailpit. Các khoản học phí có thể chuyển sang PAID sau khi bạn demo; `seed:integration` không đặt lại trạng thái của dữ liệu đã tồn tại.
+
+**Lấy OTP:** đăng nhập, mở **Thanh toán học phí**, nhập MSSV chưa thanh toán, xác nhận yêu cầu, rồi mở Mailpit. Chọn email có tiêu đề OTP gửi tới `DEMO_EMAIL`, lấy mã sáu chữ số và nhập vào trang OTP trong vòng **5 phút**. Sau khi thanh toán, Mailpit nhận thêm biên nhận. Đây là SMTP local; không gửi email ra Internet.
+
+Để khởi động lại đúng môi trường QA đã tạo trong checkout này, mở Docker Desktop rồi chạy tại thư mục gốc repo:
+
+```powershell
+docker compose -p ibanking-full-qa --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml up -d --wait
+npm.cmd run dev:ui --prefix frontend
+```
+
+Giữ terminal chạy Vite mở. Các file `.env`, `.env.compose.local` và `frontend/.env` là cấu hình local đã được Git ignore. Nếu không có các file đó, làm theo phần **Dựng môi trường mới** bên dưới. Không chạy lại seed để “reset” dữ liệu demo đang dùng.
+
+## Kiến trúc và trách nhiệm
 
 ```mermaid
 flowchart LR
-    Web[React] --> Gateway
-    Gateway --> Auth
-    Gateway --> Account
-    Gateway --> Student
-    Gateway --> Payment
-    Auth -->|Mã tài khoản| Account
-    Account -->|Hồ sơ nội bộ| Auth
-    Account -->|Lịch sử| Payment
-    Payment -->|Quyền sở hữu, debit, refund| Account
-    Payment -->|Đọc, giữ chỗ, chốt học phí| Student
-    Payment -->|OTP, biên nhận| Notification
+    Web[React/Vite] --> Gateway[API Gateway]
+    Gateway --> Auth[Auth]
+    Gateway --> Account[Account]
+    Gateway --> Student[Student]
+    Gateway --> Payment[Payment]
+    Payment -->|debit / refund| Account
+    Payment -->|giữ chỗ / chốt học phí| Student
+    Payment -->|OTP / biên nhận| Notification[Spring Boot Notification]
     Notification --> Mailpit
-    Auth --> Users[(users)]
-    Account --> Ledger[(accounts, account_debits)]
-    Student --> Tuition[(students, tuition_fees)]
-    Payment --> Payments[(payments, otp_codes)]
+    Auth --> DB[(PostgreSQL)]
+    Account --> DB
+    Student --> DB
+    Payment --> DB
 ```
 
-Bốn service dùng chung PostgreSQL server và schema, với bốn PostgreSQL role riêng. Mỗi role chỉ có quyền trên bảng service sở hữu. ID giữa service là tham chiếu theo API. Payment lưu bản chụp MSSV, tên và học kỳ để lịch sử không phụ thuộc dữ liệu sinh viên hiện hành.
+| Thành phần | Công nghệ và trách nhiệm | Cổng nội bộ |
+| --- | --- | --- |
+| Frontend | React, TypeScript, Vite; Login, Dashboard, Payment, OTP, Result, History | 5173 trên host |
+| API Gateway | Express; JWT, CORS, định tuyến allowlist; không truy cập DB | 4000 |
+| Auth | Express; username/password, JWT, hồ sơ | 4004 |
+| Account | Express; số dư, lịch sử, debit/refund idempotent | 4003 |
+| Student | Express; MSSV, học phí, giữ chỗ và chốt PAID | 4001 |
+| Payment | Express; intent, OTP, trạng thái, recovery, biên nhận | 4002 |
+| Notification | Spring Boot; gửi OTP và biên nhận qua SMTP | 8085 |
+| PostgreSQL | Một server/schema, bốn role giới hạn theo bảng service | 5432 trong Docker |
+| Mailpit | Hộp thư và SMTP thử nghiệm | 8025/1025 trong Docker |
 
-## Demo mới trên Windows
+Auth, Account, Student và Payment là **bốn process riêng**, mỗi process dùng một PostgreSQL role chỉ có quyền trên bảng mình sở hữu. Gateway là cổng HTTP công khai duy nhất của backend khi chạy bằng `compose.microservices.yml`. Các route nội bộ như debit/refund, giữ chỗ và commit học phí không được Gateway công bố.
 
-1. Tạo file cấu hình riêng từ `.env.example`. Đặt mật khẩu PostgreSQL, `DEMO_PASSWORD` và các khóa JWT, Account, Auth, Student, OTP, Notification riêng, tối thiểu 32 byte mỗi khóa. Ví dụ tạo khóa bằng `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Nếu đã có demo cũ, chọn project Compose, port và schema mới, ví dụ `micro_demo_v2`. Giữ các cấu hình cũ để truy cập dữ liệu trước đây.
-2. Lưu cấu hình vào `.env.micro.local` rồi nạp biến vào PowerShell. `DATABASE_URL` là kết nối admin chỉ dùng để áp schema, tạo role và nạp dữ liệu mẫu.
+```text
+frontend/                  React app, mock API và component tests
+src/api-gateway/           Gateway
+src/auth-service/          Auth
+src/account-service/       Account và ledger debit/refund
+src/student-service/       Student và tuition
+src/payment-service/       Payment, OTP và recovery
+src/shared/                HTTP, JWT và tiện ích dùng chung
+notification-service/      Spring Boot, template email, JUnit
+prisma/                    Schema, seed, cấp role
+sql/                       CHECK, unique index và recovery SQL
+tests/                     Core, E2E và process tests
+docs/                      Contract, Postman, báo cáo kiểm thử
+```
 
-   ```powershell
-   Get-Content .env.micro.local | Where-Object { $_ -match '^[A-Z_][A-Z0-9_]*=' } | ForEach-Object {
-     $name, $value = $_ -split '=', 2
-     [Environment]::SetEnvironmentVariable($name, $value.Trim('"'), 'Process')
-   }
-   docker compose -p ibanking-v2 -f docker-compose.yml -f compose.integration.yml up -d --wait postgres mailpit notification
-   npm ci
-   npm run db:generate
-   npm run db:push -- --skip-generate
-   npm run db:account
-   npm run db:recovery
-   npm run db:roles
-   npm run seed:account
-   npm run seed:integration
-   npm run build
-   ```
+## Cấu trúc dự án và thiết kế dữ liệu
 
-3. Nạp bốn biến `*_DATABASE_URL` từ file local do `db:roles` tạo. Với Node chạy trên host, giữ URL PostgreSQL loopback. Khi dùng Compose cho cả backend, đổi hostname trong bốn URL thành `postgres`, cổng thành `5432`, rồi chạy Compose cùng file `compose.microservices.yml`. Gateway là tiến trình Node duy nhất được publish. Có thể dừng riêng một service bằng `docker compose ... stop payment` và bật lại bằng `docker compose ... start payment`.
-4. Nếu chạy Node trên host, `npm run dev` khởi chạy năm tiến trình Node. Để chạy độc lập, đặt `DATABASE_URL` bằng URL role tương ứng cho từng terminal rồi dùng `npm run dev:auth`, `dev:account`, `dev:student`, `dev:payment` hoặc `dev:gateway`. Gateway không cần URL DB.
-5. Cài frontend bằng `npm ci --prefix frontend`. Đặt `VITE_DEMO_MODE=false`, `VITE_API_CONTRACT_CONFIRMED=true` và `VITE_API_BASE_URL=http://localhost:4000/api` trong `frontend/.env`. Chạy `npm run dev:ui --prefix frontend`. Đăng nhập `demo1` với mật khẩu đã đặt lúc seed. Tra cứu `521H9001`, kiểm tra khoản 7 triệu, lấy OTP từ Mailpit và xem kết quả cùng lịch sử. Có thể dùng `521H9002` để thử giao dịch khác.
-6. URL mặc định gồm [Web](http://localhost:5173), [Gateway health](http://localhost:4000/health), [Swagger Gateway](http://localhost:4000/docs/), [Mailpit](http://localhost:8025), Swagger [Auth](http://127.0.0.1:4004/docs/), [Account](http://127.0.0.1:4003/docs/), [Student](http://127.0.0.1:4001/docs/) và [Payment](http://127.0.0.1:4002/docs/) khi các service chạy trên host. Trong Compose, cổng Swagger nội bộ được giữ trong mạng container.
+Cây trên chỉ liệt kê thư mục nguồn chính. Ở gốc repo còn có `package.json`, `Dockerfile`, `docker-compose.yml`, `compose.integration.yml`, `compose.microservices.yml`, `.env.example` và `postman_collection.json`. `specs/001-payment-student-service/` chứa đặc tả Payment/Student. Không đưa thư mục build vào sơ đồ.
 
-## Luồng ghi nhận thanh toán
+PostgreSQL dùng database `ibanking_db` trong Compose. URL kết nối chọn schema riêng bằng tham số `?schema=micro_*`. [Prisma schema](prisma/schema.prisma) định nghĩa bảy bảng:
 
-- Payment dùng khóa idempotency theo tài khoản để trả cùng intent. Frontend gửi lại đúng ID học phí và số tiền đã hiển thị. OTP lưu HMAC, thời hạn năm phút, tiêu thụ cùng lúc ghi trạng thái `PROCESSING`.
-- Student giữ chỗ khoản phí theo `paymentId` trước debit. Account kiểm tra và cập nhật số dư nguyên tử, lưu kết quả debit/refund theo cùng ID.
-- Nếu mất phản hồi debit, Payment tiếp tục đối soát và yêu cầu lại với cùng ID. Khi Student đã xác nhận `PAID` cho ID đó, Payment mới ghi `COMPLETED`. Nếu cần bù trừ, `REFUND_PENDING` được lưu trước refund. Sau xác nhận refund và nhả giữ chỗ, Payment mới kết thúc thất bại.
-- Mailpit nhận thư thử nghiệm. Payment cần cấu hình kênh email, trừ khi chọn rõ `MAIL_MODE=mock` cho test riêng. Biên nhận được gửi sau khi commit và có thể được gửi lại nếu mất xác nhận.
+| Service sở hữu | Bảng | Quan hệ và dữ liệu chính |
+| --- | --- | --- |
+| Auth | `users` | Username duy nhất, password hash, email; `accounts.user_id` liên kết logic với user (không khai báo Prisma relation) |
+| Account | `accounts`, `account_debits` | Một account cho một user; debit ledger theo `payment_id` duy nhất và FK tới account |
+| Student | `students`, `tuition_fees` | Một student có nhiều tuition; duy nhất `(student_id, semester)`, trạng thái UNPAID/PAID |
+| Payment | `payments`, `otp_codes` | Payment lưu account/student/tuition ID dạng tham chiếu xuyên service; OTP có FK tới payment |
 
-- Payment và bản ghi HMAC của OTP được tạo nguyên tử. Nếu tiến trình dừng trước khi gửi email, OTP hết hạn sau năm phút. Người dùng tạo yêu cầu mới với khóa mới. Worker kết thúc intent cũ thiếu OTP khi đã quá năm phút.
-- Các lỗi HTTP trong quá trình đối soát được thử lại tối đa 30 lần với khoảng chờ tăng đến 60 giây. `REVIEW_REQUIRED` lưu bước lỗi và dừng retry tự động. Khi vận hành, dùng mã giao dịch để đối chiếu ledger Account và `reserved_payment_id`/trạng thái học phí tại Student. Nếu đã xác nhận Student ghi PAID cho đúng ID, khôi phục xử lý commit idempotent. Nếu cần hoàn tiền, xác minh Student chưa commit và đã chặn khả năng commit muộn trước khi chạy bù trừ với cùng ID. Nếu Student xác nhận khoản phí đã PAID cho một paymentId khác sau debit, Payment ghi REFUND_PENDING và tự bù trừ. Các trường hợp chưa xác định được kết quả commit được giữ để đối soát.
-- Healthcheck container xác nhận tiến trình HTTP phản hồi. Phép thử đăng nhập và thanh toán xuyên service kiểm tra thêm kết nối DB, role và SMTP. Notification được build thành JAR và chạy trong image Java 17 riêng. `OTP_SECRET` phải có ít nhất 32 byte để Payment khởi động.
+Bốn service có PostgreSQL role riêng, chỉ được cấp quyền bảng mình sở hữu bằng [`prisma/provision-micro-roles.ts`](prisma/provision-micro-roles.ts). Chúng vẫn dùng **chung một PostgreSQL server và schema**; không phải bốn database tách biệt. `prisma db push` tạo/cập nhật bảng trên schema mới; [`sql/account-schema.sql`](sql/account-schema.sql) thêm CHECK số dư, [`sql/payment-recovery.sql`](sql/payment-recovery.sql) thêm constraint/index hỗ trợ recovery và chống nhiều payment COMPLETED cho cùng học phí. Repo không có thư mục Prisma migration versioned; không dùng `db:push` làm kế hoạch migrate production.
 
-## Kiểm thử
+## Yêu cầu và cấu hình môi trường
 
-Chạy `npm run build` và `npm run build --prefix frontend`. E2E cần PostgreSQL dùng schema tên `micro_test_*`, Notification và Mailpit. Đặt `MAILPIT_ORIGIN` nếu dùng cổng riêng. Chạy `npm run test:e2e`. Bộ test tạo dữ liệu thử mới và đọc OTP từ Mailpit. `npm test` chạy kiểm tra core. Đặt `RUN_CORE_DB_TESTS=1` cùng schema thử để kiểm tra PostgreSQL. `npm run test:processes` kiểm tra các tiến trình riêng và cần bốn URL role thử nghiệm. Các file test TV2 cũ được giữ làm tài liệu đối chiếu.
+Các bước dưới đây dành cho Windows PowerShell; trên hệ điều hành khác dùng lệnh tương đương. Node Docker image dùng **22**; Vite 7 trên host cần Node **22.12+** hoặc phiên bản mới được Vite hỗ trợ. Repo không khóa npm version. Notification Docker image build bằng Maven **3.9** và JDK **17**; chạy local dùng Maven Wrapper `notification-service/mvnw.cmd` với JDK 17+. PostgreSQL Compose dùng image **16-alpine**. Cần Docker Desktop/Compose cho phương án A; phương án B vẫn dùng Docker cho PostgreSQL và Mailpit.
 
-Không áp `db:push` lên schema demo cũ. Dữ liệu demo hiện tại có thể tiếp tục chạy trên phiên bản cũ. Chuyển lịch sử sang stack mới cần kế hoạch backfill bản chụp Payment và đối soát các giao dịch đang mở trước khi đổi đường truy cập.
+### Biến môi trường quan trọng
+
+| Nhóm | Biến | Công dụng |
+| --- | --- | --- |
+| Database | `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `DATABASE_URL` | PostgreSQL container, cổng host và URL admin với schema `micro_*` |
+| Quyền DB | `AUTH_DATABASE_URL`, `ACCOUNT_DATABASE_URL`, `STUDENT_DATABASE_URL`, `PAYMENT_DATABASE_URL` | URL role do `db:roles` sinh, dùng riêng cho bốn service |
+| Secrets | `JWT_SECRET`, `OTP_SECRET`, `AUTH_SERVICE_TOKEN`, `ACCOUNT_SERVICE_TOKEN`, `STUDENT_SERVICE_TOKEN`, `NOTIFICATION_INTERNAL_KEY` | Ký token/OTP và xác thực nội bộ; cấp giá trị ngẫu nhiên khác nhau |
+| Demo | `DEMO_PASSWORD`, `DEMO_EMAIL` | Seed user và địa chỉ nhận OTP trong Mailpit |
+| Host HTTP | `GATEWAY_PORT`, `NOTIFICATION_PORT`, `MAILPIT_HTTP_PORT`, `MAILPIT_SMTP_PORT`, `FRONTEND_ORIGIN` | Cổng publish và origin CORS |
+| Kết nối | `AUTH_SERVICE_ORIGIN`, `ACCOUNT_SERVICE_ORIGIN`, `STUDENT_SERVICE_ORIGIN`, `PAYMENT_SERVICE_ORIGIN`, `NOTIFICATION_SERVICE_URL`, `MAILPIT_ORIGIN` | Địa chỉ service cho tiến trình chạy trên host và bài test |
+| Frontend | `VITE_DEMO_MODE`, `VITE_API_BASE_URL`, `VITE_API_CONTRACT_CONFIRMED` | Chọn mock/API thật và địa chỉ Gateway `/api` |
+| SMTP local | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_AUTH`, `SMTP_STARTTLS`, `MAIL_FROM` | Cấu hình Notification khi không dùng mặc định Mailpit trong Compose |
+
+Xem [.env.example](.env.example), [frontend/.env.example](frontend/.env.example) và [application.yml](notification-service/src/main/resources/application.yml). Không đưa secret vào `VITE_*` hoặc Git.
+
+## Chạy bằng Docker Compose hoặc local
+
+### Option A — Docker Compose và frontend trên host
+
+### 1. Yêu cầu
+
+- Node.js hỗ trợ Vite 7 (khuyến nghị **22.12+ hoặc 24 LTS**) và npm.
+- Docker Desktop có Docker Compose.
+- JDK **17+** và Maven Wrapper để chạy test Notification bằng Java.
+- Các cổng bạn chọn cho PostgreSQL, Gateway, Vite, Mailpit và Notification chưa bị service khác sử dụng.
+
+**Chỉ dùng database phát triển/test riêng.** Các lệnh `db:push` và seed dưới đây dành cho schema mới có tên bắt đầu bằng `micro_`. E2E và core DB test chỉ chấp nhận schema `micro_test_*`. Đừng áp schema mới lên dữ liệu demo cũ hoặc production.
+
+### 2. Tạo cấu hình local
+
+Từ thư mục gốc repo:
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item frontend/.env.example frontend/.env
+```
+
+Sửa `.env` bằng editor. Các giá trị bắt buộc:
+
+| Biến | Cách đặt |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Mật khẩu ngẫu nhiên cho PostgreSQL container mới |
+| `POSTGRES_PORT` | Cổng host còn trống, ví dụ `5434` |
+| `DATABASE_URL` | URL admin có **cùng mật khẩu/cổng** và schema mới, ví dụ `micro_demo_nhom10` |
+| `JWT_SECRET`, `ACCOUNT_SERVICE_TOKEN`, `AUTH_SERVICE_TOKEN`, `STUDENT_SERVICE_TOKEN` | Bốn khóa **khác nhau**, mỗi khóa tối thiểu 32 byte |
+| `OTP_SECRET`, `NOTIFICATION_INTERNAL_KEY` | Hai khóa khác nhau, mỗi khóa tối thiểu 32 byte |
+| `DEMO_PASSWORD` | Mật khẩu demo tối thiểu 12 ký tự; đặt trước khi seed account |
+| `DEMO_EMAIL` | Địa chỉ thử nghiệm để tìm thư trong Mailpit, ví dụ `demo1@ibanking.test` |
+| `FRONTEND_ORIGIN` | Đúng origin Vite: `http://127.0.0.1:5173` |
+| `GATEWAY_PORT`, `NOTIFICATION_PORT`, `MAILPIT_HTTP_PORT`, `MAILPIT_SMTP_PORT` | Cổng host tùy chọn; mặc định 4000, 8085, 8025, 1025 |
+
+Ví dụ nếu cổng cũ đang bận: `POSTGRES_PORT=5434`, `GATEWAY_PORT=4010`, `NOTIFICATION_PORT=8086`, `MAILPIT_HTTP_PORT=8026`, `MAILPIT_SMTP_PORT=1026`. Khi đó đặt `NOTIFICATION_SERVICE_URL=http://127.0.0.1:8086/internal/notifications` và `MAILPIT_ORIGIN=http://127.0.0.1:8026` cho các bài test chạy trên host. `DATABASE_URL` sẽ có dạng `postgresql://postgres:<mật-khẩu>@127.0.0.1:5434/ibanking_db?schema=micro_demo_nhom10`. Dùng mật khẩu dạng hex để không phải URL-encode ký tự đặc biệt.
+
+Tạo từng khóa ngẫu nhiên rồi dán vào `.env`:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Không đặt JWT, OTP, service token hay mật khẩu DB vào biến `VITE_*`; các biến này được đóng gói vào frontend. File `.env` và `.env.*.local` đã được Git ignore, nhưng vẫn cần kiểm tra `git status` trước khi chia sẻ code.
+
+### 3. PostgreSQL, Notification và database
+
+Chọn một tên project Compose riêng. Ví dụ `ibanking-demo`:
+
+```powershell
+$project = 'ibanking-demo'
+docker compose -p $project --env-file .env -f docker-compose.yml -f compose.integration.yml up -d --build --wait postgres mailpit notification
+npm.cmd ci
+npm.cmd run db:generate
+npm.cmd run db:push -- --skip-generate
+npm.cmd run db:account
+npm.cmd run db:recovery
+npm.cmd run db:roles
+```
+
+`db:account` thêm CHECK số dư, `db:recovery` thêm các cấu trúc phục hồi và unique index chống hai payment COMPLETED cho cùng học phí. `db:roles` chỉ chạy **một lần** trên schema mới và tạo file `.env.micro-roles.local` chứa bốn URL role. File này đã được Git ignore; không đưa lên GitHub.
+
+Thay bốn dòng `AUTH_DATABASE_URL`, `ACCOUNT_DATABASE_URL`, `STUDENT_DATABASE_URL` và `PAYMENT_DATABASE_URL` trong `.env` bằng URL vừa sinh. Có thể làm tự động mà không in mật khẩu ra terminal:
+
+```powershell
+$roles = @{}
+Get-Content .env.micro-roles.local | ForEach-Object {
+  $name, $value = $_ -split '=', 2
+  $roles[$name] = $value
+}
+$config = Get-Content .env
+$config = foreach ($line in $config) {
+  $name = ($line -split '=', 2)[0]
+  if ($roles.ContainsKey($name)) { "$name=$($roles[$name])" } else { $line }
+}
+$config | Set-Content .env
+npm.cmd run seed:account
+npm.cmd run seed:integration
+npm.cmd run build
+```
+
+`seed:account` tạo `demo1`/`demo2`; `seed:integration` tạo ba MSSV `521H9001`–`521H9003`. Seed account **không đổi mật khẩu** của user đã tồn tại. Nếu đổi `DEMO_PASSWORD` sau lần seed đầu, tài khoản cũ vẫn dùng mật khẩu ban đầu. Không chạy script `npm run seed` cũ trên database demo đang sử dụng.
+
+### 4. Chạy năm service Node bằng Docker Compose
+
+Bốn role URL trong `.env` dùng địa chỉ PostgreSQL **trên host** để test bằng Node. Container cần hostname `postgres`, port `5432`. Tạo file Compose local từ `.env`:
+
+```powershell
+$portLine = Get-Content .env | Where-Object { $_ -like 'POSTGRES_PORT=*' } | Select-Object -First 1
+$port = ($portLine -split '=', 2)[1]
+$composeConfig = foreach ($line in Get-Content .env) {
+  if ($line -match '^(AUTH|ACCOUNT|STUDENT|PAYMENT)_DATABASE_URL=') {
+    $line.Replace("@127.0.0.1:$port/", '@postgres:5432/').Replace("@localhost:$port/", '@postgres:5432/')
+  } else { $line }
+}
+$composeConfig | Set-Content .env.compose.local
+docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml config -q
+docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml up -d --build --wait
+```
+
+`config -q` phải thoát mã 0. `up --wait` phải báo tất cả container healthy. File `.env.compose.local` đã được Git ignore. Nếu Compose đã chạy với cấu hình cũ, không đổi mật khẩu/volume hiện có tùy tiện; tạo project và cổng mới.
+
+### 5. Chạy frontend dùng API thật
+
+Sửa `frontend/.env`:
+
+```dotenv
+VITE_DEMO_MODE=false
+VITE_API_CONTRACT_CONFIRMED=true
+VITE_API_BASE_URL=http://127.0.0.1:4010/api
+```
+
+Đổi `4010` thành `GATEWAY_PORT` thực tế. `FRONTEND_ORIGIN` trong `.env` phải là `http://127.0.0.1:5173`. Trong một terminal riêng:
+
+```powershell
+npm.cmd ci --prefix frontend
+npm.cmd run dev:ui --prefix frontend
+```
+
+Mở `http://127.0.0.1:5173/`. Gateway trả Bearer JWT sau login; frontend giữ token trong RAM, nên reload trang sẽ cần đăng nhập lại. Tài khoản `demo1` dùng mật khẩu `DEMO_PASSWORD` đã seed. Frontend **chỉ** gọi Gateway; đường dẫn API không phải port Notification.
+
+### Chế độ frontend mock
+
+Để xem UI độc lập với backend, đặt `VITE_DEMO_MODE=true` trong `frontend/.env` rồi chạy `npm.cmd run dev --prefix frontend`. Script này khởi động Vite và mock API; dữ liệu lưu trong RAM, OTP mock khác với OTP Mailpit và **không chứng minh backend thật hoạt động**. Không chạy đồng thời `dev` và `dev:ui` trên cùng cổng 5173.
+
+### Quản lý Compose
+
+Sau khi cấu hình ở các bước trên, kiểm tra và xem log bằng:
+
+```powershell
+docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml ps
+docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml logs --tail=100 gateway payment notification
+docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.integration.yml -f compose.microservices.yml down
+```
+
+`down` dừng/xóa container và network của project; không thêm `-v` nếu muốn giữ volume PostgreSQL. Dừng Vite bằng `Ctrl+C` ở terminal của nó.
+
+### Option B — Chạy các service local
+
+Sao chép và điền `.env`/`frontend/.env` theo bước cấu hình ở Option A. Chỉ chạy PostgreSQL và Mailpit bằng Compose; **không chạy đồng thời** container Notification/Node của Option A trên cùng các cổng. Bốn URL role trong `.env` phải dùng `127.0.0.1:POSTGRES_PORT`; các service origin dùng địa chỉ host trong `.env.example`.
+
+```powershell
+$project = 'ibanking-local'
+docker compose -p $project --env-file .env -f docker-compose.yml -f compose.integration.yml up -d --wait postgres mailpit
+npm.cmd ci
+npm.cmd run db:generate
+npm.cmd run db:push -- --skip-generate
+npm.cmd run db:account
+npm.cmd run db:recovery
+npm.cmd run db:roles
+# Sao chép bốn URL vừa sinh từ .env.micro-roles.local vào .env như Option A.
+npm.cmd run seed:account
+npm.cmd run seed:integration
+npm.cmd run build
+```
+
+Mở terminal 1 để chạy Notification (đặt cùng `NOTIFICATION_INTERNAL_KEY` trong `.env` thành biến môi trường của terminal và `SMTP_PORT` theo Mailpit host port):
+
+```powershell
+$env:NOTIFICATION_INTERNAL_KEY = (Get-Content .env | Where-Object { $_ -like 'NOTIFICATION_INTERNAL_KEY=*' } | Select-Object -First 1).Split('=', 2)[1]
+$env:SMTP_HOST = '127.0.0.1'
+$env:SMTP_PORT = (Get-Content .env | Where-Object { $_ -like 'MAILPIT_SMTP_PORT=*' } | Select-Object -First 1).Split('=', 2)[1]
+cd notification-service
+.\mvnw.cmd spring-boot:run
+```
+
+Mở terminal 2 tại thư mục gốc repo: `npm.cmd run dev`. Script [`src/run-all.ts`](src/run-all.ts) khởi chạy **năm process riêng** từ `dist/`, đặt role DB riêng cho Auth/Account/Student/Payment; Gateway mặc định cổng 4000. Sau khi sửa source, chạy `npm.cmd run build` và khởi động lại. Mở terminal 3: `npm.cmd ci --prefix frontend; npm.cmd run dev:ui --prefix frontend`, với `frontend/.env` ở chế độ API thật và `VITE_API_BASE_URL=http://127.0.0.1:4000/api`. Đóng từng terminal bằng `Ctrl+C`.
+
+## API qua Gateway
+
+Frontend gọi `VITE_API_BASE_URL` kết thúc bằng `/api`. Gateway chuyển nguyên method/path sang service tương ứng, không rewrite prefix. Các endpoint công khai sau lấy từ [`src/api-gateway/index.ts`](src/api-gateway/index.ts); cột xác thực là yêu cầu của Gateway:
+
+| Service | HTTP Method | Endpoint | Description | Authentication Required |
+| --- | --- | --- | --- | --- |
+| Gateway | GET | `/health` | Health check | Không |
+| Auth | POST | `/api/auth/login` | Username/password → JWT | Không |
+| Auth | GET | `/api/auth/me` | Hồ sơ người dùng | Bearer JWT |
+| Account | GET | `/api/accounts/me` | Tài khoản hiện tại | Bearer JWT |
+| Account | GET | `/api/accounts/me/balance` | Số dư | Bearer JWT |
+| Account | GET | `/api/accounts/me/transactions` | Lịch sử | Bearer JWT |
+| Student | GET | `/api/students/:studentCode` | Tra MSSV | Bearer JWT |
+| Student | GET | `/api/tuitions/student/:studentCode` | Học phí | Bearer JWT |
+| Payment | POST | `/api/payments/create-intent` | Tạo intent; hỗ trợ `Idempotency-Key` | Bearer JWT |
+| Payment | POST | `/api/payments/confirm-otp` | Xác thực OTP | Bearer JWT |
+| Payment | GET | `/api/payments/:paymentId` | Chi tiết/trạng thái | Bearer JWT |
+| Payment | GET | `/api/payments/account/:accountId` | Lịch sử theo account sở hữu | Bearer JWT |
+
+API nội bộ **không được Gateway công bố**: Account `GET /api/accounts/:accountId`, `POST /api/accounts/deduct`, `POST /api/accounts/refund` dùng service token; Student `GET /internal/tuitions/:id`, `POST /internal/tuitions/:id/{reserve,commit,release}` dùng service token; Notification `POST /internal/notifications/otp` và `/payment-success` dùng internal key. Chúng phục vụ điều phối, không gọi trực tiếp từ frontend.
+
+Gateway cho phép origin frontend và các header `Authorization`, `Content-Type`, `Idempotency-Key`. Xem Swagger Gateway tại `/docs/` và tài liệu [Auth/Account/Gateway](docs/tv1.md), [Payment–Account contract](docs/payment-account-contract.md), [OpenAPI Payment/Student](specs/001-payment-student-service/contracts/openapi.yaml).
+
+## Quy trình thanh toán và tính nhất quán
+
+1. User đăng nhập, xem số dư và tra học phí bằng MSSV. Payment kiểm tra số tiền toàn bộ, trạng thái học phí và số dư.
+2. Payment tạo intent theo `Idempotency-Key`; OTP được lưu dạng HMAC, gắn với payment, có hạn **5 phút** và dùng một lần. Notification gửi OTP tới email demo trong Mailpit.
+3. Student giữ chỗ khoản học phí theo paymentId. Account debit nguyên tử và ghi ledger theo paymentId để retry không trừ lần hai.
+4. Student chỉ chuyển học phí sang PAID khi chốt đúng paymentId. Payment ghi COMPLETED, lịch sử và gửi biên nhận sau commit.
+5. Khi mất phản hồi hoặc có lỗi giữa các service, worker đối soát trạng thái `PROCESSING`/`REFUND_PENDING`. Trường hợp chưa đủ bằng chứng được giữ `REVIEW_REQUIRED` để kiểm tra ledger và học phí, không tự kết luận thành công.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as React
+    participant G as Gateway
+    participant Auth as Auth
+    participant Account as Account
+    participant S as Student
+    participant P as Payment
+    participant N as Notification
+    User->>UI: Đăng nhập, nhập MSSV
+    UI->>G: POST /api/auth/login
+    G->>Auth: Chuyển login
+    Auth-->>G: JWT
+    G-->>UI: JWT
+    UI->>G: GET student/tuition, account/balance
+    G->>S: Tra cứu học phí
+    G->>Account: Tra cứu tài khoản
+    UI->>G: POST /api/payments/create-intent
+    G->>P: Chuyển intent + JWT
+    P->>N: POST /internal/notifications/otp
+    N-->>User: Email OTP qua Mailpit
+    User->>UI: Nhập OTP
+    UI->>G: POST /api/payments/confirm-otp
+    G->>P: Chuyển xác nhận
+    P->>S: reserve tuition theo paymentId
+    P->>Account: deduct theo paymentId
+    P->>S: commit tuition PAID
+    P->>N: Gửi biên nhận sau COMPLETED
+    P-->>G: Trạng thái
+    G-->>UI: Kết quả
+    UI-->>User: Kết quả, số dư, lịch sử
+```
+
+Account xử lý debit trong một PostgreSQL transaction ở isolation `ReadCommitted`: ledger `account_debits.payment_id` là khóa chính, `SELECT ... FOR UPDATE` khóa entry, `UPDATE accounts ... WHERE balance >= amount` không cho âm. Student khóa dòng `tuition_fees FOR UPDATE` trước reserve/commit/release. Payment có unique `(account_id, idempotency_key)` và index duy nhất cho payment COMPLETED theo học phí. OTP dùng HMAC, hạn 5 phút, tối đa 5 lần sai, cập nhật dùng một lần bằng điều kiện nguyên tử.
+
+Không có distributed ACID transaction giữa bốn service. Payment ghi trạng thái bền trước HTTP call, dùng `paymentId` để retry debit/refund an toàn; HTTP lỗi không được hiểu là debit thất bại. Worker phục hồi tiếp tục reserve/debit/commit hoặc hoàn tiền và release nếu có bằng chứng lỗi. Sau giới hạn retry, `REVIEW_REQUIRED` yêu cầu đối soát thủ công. Biên nhận được gửi sau khi hoàn tất và có cờ `receipt_sent` để retry.
+
+Frontend chỉ hiện thành công khi API trả trạng thái hoàn tất. API thật hiện không có chức năng gửi lại OTP trên cùng giao dịch; hãy tạo yêu cầu mới theo hướng dẫn trong UI. Đừng thử lại một giao dịch chưa rõ kết quả trước khi xem trạng thái/lịch sử.
+
+## Hướng dẫn demo
+
+1. Mở frontend; đăng nhập `demo1` hoặc `demo2` bằng `DEMO_PASSWORD` đã đặt lúc seed. Mật khẩu không được đưa vào repo.
+2. Xem account và số dư ở Dashboard; vào Thanh toán học phí, tra `521H9001`, `521H9002` hoặc `521H9003` nếu còn UNPAID.
+3. Xem tên sinh viên, học kỳ, số tiền; xác nhận thanh toán **toàn bộ**, không nhập số tiền tùy ý.
+4. Mở Mailpit tại cổng `MAILPIT_HTTP_PORT`, lấy OTP email của giao dịch mới nhất trong 5 phút và nhập trên UI.
+5. Xem kết quả, số dư mới, trạng thái học phí PAID và lịch sử; xem thêm email biên nhận trong Mailpit.
+
+Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Nếu MSSV mẫu đã PAID, tạo schema demo mới theo phần cài đặt; không sửa dữ liệu thủ công trong schema đang trình diễn.
+
+## Build và kiểm thử
+
+Chạy test có ghi database **chỉ** với schema riêng `micro_test_*`, không dùng schema demo đang trình diễn. `.env` của terminal test phải trỏ tới schema này, URL role phải trỏ cùng schema, Notification/Mailpit local phải hoạt động.
+
+```powershell
+npm.cmd run build
+npm.cmd test
+$env:RUN_CORE_DB_TESTS = '1'
+npm.cmd run test:core
+Remove-Item Env:RUN_CORE_DB_TESTS
+npm.cmd run test:e2e
+npm.cmd run test:processes
+npm.cmd run build --prefix frontend
+npm.cmd test --prefix frontend
+cd notification-service
+.\mvnw.cmd verify
+```
+
+`npm test` backend chạy core unit tests; sáu test DB chỉ chạy khi `RUN_CORE_DB_TESTS=1`. `test:e2e` tạo fixture test và đọc OTP từ Mailpit; `test:processes` khởi động từng process với role riêng rồi kiểm tra thanh toán/restart. Trên Windows, nếu `java -version` đang là JDK 11, đặt `JAVA_HOME` tới JDK 17+ trước khi dùng Maven Wrapper. Repo hiện không có script lint.
+
+Đợt QA ngày 15/11/2026: backend core DB **10/10**, E2E API thật **19/19**, process test **1/1**, Notification JUnit **10/10**, frontend mock/component **24/24**; build backend/frontend và tám container Compose đều đạt. Xem [báo cáo đầy đủ](docs/FULL_SYSTEM_TEST_REPORT.md). Kết quả frontend mock/component không thay thế kiểm thử click thực tế trên trình duyệt.
+
+## Kiểm tra và xử lý sự cố
+
+- **Không thấy email OTP:** xác nhận đã tạo intent thành công, mở đúng Mailpit HTTP port, lọc theo `DEMO_EMAIL` và payment mới nhất. Kiểm tra Notification healthy và `NOTIFICATION_SERVICE_URL`/`NOTIFICATION_INTERNAL_KEY` khớp. Không lấy OTP của giao dịch cũ.
+- **Login thất bại:** kiểm tra username `demo1`/`demo2`, giá trị `DEMO_PASSWORD` dùng **lúc seed lần đầu**, Auth healthy và URL Gateway. Thay `DEMO_PASSWORD` trong `.env` không đổi password hash đã seed.
+- **CORS hoặc UI không gọi được API:** dùng `http://127.0.0.1:5173`, đặt `FRONTEND_ORIGIN` đúng origin, `VITE_DEMO_MODE=false` và `VITE_API_BASE_URL` gồm port Gateway cùng hậu tố `/api`. Restart Vite sau khi sửa `frontend/.env`.
+- **Port bị chiếm:** chọn project Compose/cổng host mới trong `.env`; kiểm tra bằng `docker ps`. Không tắt tiến trình khác nếu không rõ chủ sở hữu.
+- **`db:roles` báo role/file đã tồn tại:** file `.env.micro-roles.local` chứa URL role đã tạo. Không tạo lại trên schema có dữ liệu; dùng lại file/cấu hình tương ứng.
+- **Test từ chối chạy:** E2E và core DB yêu cầu schema `micro_test_*` để bảo vệ dữ liệu demo. Tạo schema test riêng và áp các bước database lên schema đó.
+
+## Bảo mật và giới hạn hiện tại
+
+Không commit `.env`, URL role, JWT/service token, mật khẩu DB hay OTP. Chỉ Gateway và các cổng demo cần thiết được publish trên loopback; không dùng cấu hình này để mở trực tiếp ra Internet. Mailpit chỉ dùng email giả lập. Bốn service dùng chung một PostgreSQL server/schema nhưng quyền bảng được chia theo role; đây là mức tách dữ liệu hiện có của dự án.
+
+Kiểm thử API và email local đã đạt; **kiểm tra trực quan desktop/mobile và toàn bộ thao tác UI bằng trình duyệt chưa được xác nhận tự động** trong báo cáo QA. `npm audit --omit=dev` ở thời điểm QA còn bốn cảnh báo high ở backend, cần đánh giá/nâng dependency trước khi triển khai công khai. Chuyển dữ liệu demo cũ sang kiến trúc mới cần kế hoạch backfill và đối soát payment đang mở; không chạy `db:push` lên schema cũ.
+
+## Giao diện, tài liệu và tình trạng dự án
+
+Các màn hình trong [`frontend/src/pages/`](frontend/src/pages/) gồm Login, Dashboard, Tuition Payment, OTP Verification, Payment Result và Transaction History. Repo có [ảnh kết quả E2E](docs/e2e-web-result.png), nhưng chưa có bộ screenshot riêng cho cả sáu màn hình; README không gắn ảnh thay thế hay ảnh chưa tồn tại.
+
+| Component | Status | Notes |
+| --- | --- | --- |
+| Gateway, Auth, Account, Student, Payment | Tested | Process riêng, core DB/E2E/API và Compose đã kiểm thử trên schema test |
+| Notification + Mailpit | Tested | JUnit và gửi OTP/biên nhận SMTP local |
+| Frontend API integration | Partial | Build, mock/component test đạt; API smoke đạt, chưa xác nhận đầy đủ tương tác trình duyệt |
+| Demo frontend mock | Implemented | Dữ liệu RAM; hành vi có thể khác API thật |
+| Production deployment/migration | Not Verified | Chưa có kiểm thử triển khai công khai hoặc migration versioned |
+
+Tài liệu liên quan: [Auth/Account/Gateway và hướng dẫn](docs/tv1.md), [test report TV1](docs/tv1-test-report.md), [Postman collection](docs/tv1.postman_collection.json), [Auth OpenAPI](docs/auth.openapi.yaml), [Account OpenAPI](docs/account.openapi.yaml), [Payment–Account contract](docs/payment-account-contract.md), [Payment/Student specification](specs/001-payment-student-service/spec.md), [data model](specs/001-payment-student-service/data-model.md), [quickstart](specs/001-payment-student-service/quickstart.md) và [full system test report](docs/FULL_SYSTEM_TEST_REPORT.md). Repo hiện không có file Use Case Diagram, ERD ảnh hoặc Architecture Audit riêng đã xác minh; sơ đồ kiến trúc trong README và Prisma schema là nguồn tham chiếu hiện có.
+
+**Thông tin học thuật:** Đồ án giữa kỳ môn Service-Oriented Architecture (SOA), Trường Đại học Tôn Đức Thắng, năm học 2026–2027. Mọi tài khoản, học phí và giao dịch trong môi trường demo là dữ liệu mô phỏng; ứng dụng không xử lý thanh toán ngân hàng thật.
