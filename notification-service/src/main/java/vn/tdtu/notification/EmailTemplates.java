@@ -16,6 +16,9 @@ public final class EmailTemplates {
     public static String otp(NotificationRequests.Otp r) {
         return frame("Xác thực giao dịch thanh toán học phí", "<p>Mã giao dịch: <strong>" + escape(r.paymentId()) + "</strong></p><p>Mã OTP của bạn:</p><p style=\"padding:20px;text-align:center;font-size:32px;letter-spacing:10px;font-weight:bold;color:#0754C9;background:#EDF8FF;border-radius:10px\">" + escape(r.otp()) + "</p><p>Hết hạn lúc <strong>" + TIME.format(r.expiresAt()) + " (giờ Việt Nam)</strong>. Mã chỉ dùng để xác thực giao dịch nêu trên.</p><p>Email này chưa phải xác nhận thanh toán thành công.</p>");
     }
+    public static String emailChange(NotificationRequests.EmailChange r) {
+        return frame("Xác minh email nhận thông báo", "<p>Bạn đã yêu cầu dùng địa chỉ này để nhận OTP và biên nhận thanh toán học phí.</p><p>Mã xác minh của bạn:</p><p style=\"padding:20px;text-align:center;font-size:32px;letter-spacing:10px;font-weight:bold;color:#0754C9;background:#EDF8FF;border-radius:10px\">" + escape(r.otp()) + "</p><p>Mã hết hạn lúc <strong>" + TIME.format(r.expiresAt()) + " (giờ Việt Nam)</strong>. Nếu bạn không yêu cầu đổi email, hãy bỏ qua thư này.</p>");
+    }
     public static String success(NotificationRequests.PaymentSuccess r) {
         String amount = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("vi-VN")).format(r.amount());
         return frame("Thanh toán học phí thành công", "<p style=\"color:#16A34A\">Giao dịch đã được Payment Service xác nhận thành công.</p><p>Mã giao dịch: <strong>" + escape(r.paymentId()) + "</strong></p><p>MSSV: " + escape(r.studentId()) + "</p><p>Sinh viên: " + escape(r.studentName()) + "</p><p>Số tiền: <strong>" + amount + "</strong></p><p>Thời gian: " + TIME.format(r.paidAt()) + " (giờ Việt Nam)</p><p>Trạng thái: <strong>Thành công</strong></p>");

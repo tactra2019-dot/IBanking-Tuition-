@@ -13,6 +13,12 @@ public final class NotificationRequests {
         @NotBlank @Pattern(regexp="\\d{6}") String otp,
         @NotNull Instant expiresAt
     ) { @Override public String toString() { return "Otp[REDACTED]"; } }
+    public record EmailChange(
+        @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,80}") String eventId,
+        @NotBlank @Email @Size(max=100) String to,
+        @NotBlank @Pattern(regexp="\\d{6}") String otp,
+        @NotNull Instant expiresAt
+    ) { @Override public String toString() { return "EmailChange[REDACTED]"; } }
     public record PaymentSuccess(
         @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,80}") String eventId,
         @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,80}") String paymentId,

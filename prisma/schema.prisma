@@ -107,6 +107,11 @@ model User {
   fullName     String   @map("full_name") @db.VarChar(100)
   email        String   @db.VarChar(100)
   phone        String   @db.VarChar(20)
+  pendingEmail             String?   @map("pending_email") @db.VarChar(100)
+  emailChangeCodeHash      String?   @map("email_change_code_hash") @db.VarChar(64)
+  emailChangeExpiresAt     DateTime? @map("email_change_expires_at")
+  emailChangeAttempts      Int       @default(0) @map("email_change_attempts")
+  emailChangeRequestedAt   DateTime? @map("email_change_requested_at")
 
   @@map("users")
 }

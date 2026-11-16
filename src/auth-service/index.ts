@@ -6,6 +6,7 @@ import { issueToken, secret, userIdFromRequest, verifyPassword } from '../shared
 import { coreDocs, handle, handleError } from '../shared/core-http';
 import { prisma } from '../shared/prisma';
 import { sendError, sendSuccess } from '../shared/response';
+import { emailChangeRouter } from './email-change';
 
 export const app = express();
 app.use(express.json({ limit: '8kb' }));
@@ -53,6 +54,7 @@ app.get('/api/auth/me', handle(async (req, res) => {
   const accountId = response.ok ? (await response.json()).data.accountId : null;
   return sendSuccess(res, { userId, ...user, accountId });
 }));
+app.use('/api/auth/email-change', emailChangeRouter);
 app.use(handleError);
 
 if (require.main === module) {

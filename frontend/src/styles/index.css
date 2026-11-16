@@ -117,6 +117,15 @@ b {
 .full-width {
   width: 100%;
 }
+.email-change-form {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid #e3edf7;
+  padding-top: 22px;
+}
+.email-change-form h3 { font-size: 16px; }
+.email-change-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.email-change-message { color: #14734b; font-size: 12px; }
 .eyebrow {
   font-size: 10px;
   letter-spacing: 0.13em;

@@ -11,6 +11,7 @@ import { setAccessToken } from "../services/client";
 import type { User } from "../types";
 const Context = createContext<{
   user: User | null;
+  updateEmail: (email: string) => void;
   login: (u: string, p: string) => Promise<void>;
   logout: () => void;
 } | null>(null);
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <Context.Provider
       value={{
         user,
+        updateEmail: (email) => setUser((current) => current ? { ...current, email } : current),
         login: async (u, p) => {
           const result = await authApi.login(u, p);
           setAccessToken(result.accessToken);

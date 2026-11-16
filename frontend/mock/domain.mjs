@@ -86,6 +86,7 @@ export function createBank({ now = () => Date.now() } = {}) {
   ]);
   const transactions = new Map();
   const sessions = new Set();
+  let pendingEmail = null;
   const keys = new Map();
   ["SUCCESS", "SUCCESS", "FAILED"].forEach((status, i) => {
     const id = `DEMO-2026-00${i + 1}`;
@@ -141,6 +142,21 @@ export function createBank({ now = () => Date.now() } = {}) {
     },
     account: () => structuredClone(account),
     user: () => structuredClone(user),
+    requestEmailChange(email, password) {
+      if (password !== "Demo@123") fail(401, "Mật khẩu không đúng.");
+      if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 100)
+        fail(400, "Email không hợp lệ.");
+      if (email.toLowerCase() === user.email.toLowerCase()) fail(409, "Email mới trùng với email hiện tại.");
+      pendingEmail = email.toLowerCase();
+      return { email: pendingEmail, expiresAt: new Date(now() + 300000).toISOString() };
+    },
+    confirmEmailChange(code) {
+      if (!pendingEmail) fail(404, "Không có yêu cầu đổi email đang chờ.");
+      if (code !== "123456") fail(400, "Mã xác minh không đúng.");
+      user.email = pendingEmail;
+      pendingEmail = null;
+      return { email: user.email };
+    },
     student: (id) => structuredClone(student(id)),
     list({ status, page = 1, pageSize = 5 } = {}) {
       const all = [...transactions.values()]

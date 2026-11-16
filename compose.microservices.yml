@@ -33,6 +33,8 @@ services:
       HEALTH_PORT: "4004"
       DATABASE_URL: ${AUTH_DATABASE_URL:?Thiếu AUTH_DATABASE_URL}
       AUTH_SERVICE_TOKEN: ${AUTH_SERVICE_TOKEN:?Thiếu AUTH_SERVICE_TOKEN}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?Thiếu NOTIFICATION_INTERNAL_KEY}
+      NOTIFICATION_SERVICE_URL: http://notification:8085/internal/notifications
   account:
     <<: *node
     command: node dist/src/account-service/index.js

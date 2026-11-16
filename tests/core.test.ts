@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, createHmac } from 'node:crypto';
 import { once } from 'node:events';
 import { AddressInfo } from 'node:net';
+import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
 import { app as gateway } from '../src/api-gateway';
 import { app as account } from '../src/account-service';
@@ -29,6 +30,49 @@ const historyId = randomUUID();
 const otherHistoryId = randomUUID();
 const password = randomBytes(24).toString('hex');
 const authHeader = { authorization: `Bearer ${issueToken(userId).accessToken}` };
+
+test('Đổi email chỉ có hiệu lực sau khi xác minh mã gửi tới địa chỉ mới', { skip: !databaseTests }, async () => {
+  let delivered: { to: string; otp: string } | undefined;
+  const notification = createServer(async (req, res) => {
+    if (req.url !== '/email-change' || req.headers['x-internal-key'] !== serviceToken) {
+      res.writeHead(401).end(); return;
+    }
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    delivered = { to: payload.to, otp: payload.otp };
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{}');
+  }).listen(0, '127.0.0.1');
+  await once(notification, 'listening');
+  const previousUrl = process.env.NOTIFICATION_SERVICE_URL;
+  const previousKey = process.env.NOTIFICATION_INTERNAL_KEY;
+  process.env.NOTIFICATION_SERVICE_URL = url(notification, '');
+  process.env.NOTIFICATION_INTERNAL_KEY = serviceToken;
+  try {
+    const route = '/api/auth/email-change/request';
+    assert.equal((await post(gatewayServer, route, { email: 'new-test@example.test', password: 'wrong' }, authHeader)).status, 401);
+    assert.equal((await post(gatewayServer, route, { email: 'new-test@example.test', password }, authHeader)).status, 202);
+    assert.deepEqual(delivered?.to, 'new-test@example.test');
+    assert.match(delivered?.otp || '', /^\d{6}$/);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).email, 'test@example.test');
+    assert.equal((await post(gatewayServer, '/api/auth/email-change/confirm', { code: 'abcdef' }, authHeader)).status, 400);
+    const wrong = delivered!.otp === '000000' ? '000001' : '000000';
+    assert.equal((await post(gatewayServer, '/api/auth/email-change/confirm', { code: wrong }, authHeader)).status, 400);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).emailChangeAttempts, 1);
+    assert.equal((await post(gatewayServer, '/api/auth/email-change/confirm', { code: delivered!.otp }, authHeader)).status, 200);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).email, 'new-test@example.test');
+    assert.equal((await get('/api/accounts/me', authHeader)).status, 200);
+    const accountProfile = await (await get('/api/accounts/me', authHeader)).json();
+    assert.equal(accountProfile.data.email, 'new-test@example.test');
+    assert.equal((await post(gatewayServer, '/api/auth/email-change/confirm', { code: delivered!.otp }, authHeader)).status, 404);
+  } finally {
+    if (previousUrl === undefined) delete process.env.NOTIFICATION_SERVICE_URL;
+    else process.env.NOTIFICATION_SERVICE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NOTIFICATION_INTERNAL_KEY;
+    else process.env.NOTIFICATION_INTERNAL_KEY = previousKey;
+    notification.close();
+  }
+});
 
 const gatewayServer = gateway.listen(0, '127.0.0.1');
 const accountServer = account.listen(0, '127.0.0.1');

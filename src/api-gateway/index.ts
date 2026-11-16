@@ -46,6 +46,7 @@ app.use(createSwaggerRouter());
 app.get('/health', (_req, res) => res.json({ service: 'api-gateway', status: 'ok' }));
 app.post('/api/auth/login', rateLimit(60, 60000, req => req.ip || 'local'), forward('auth', false));
 app.get('/api/auth/me', forward('auth'));
+app.post(['/api/auth/email-change/request', '/api/auth/email-change/confirm'], forward('auth'));
 app.get(['/api/accounts/me', '/api/accounts/me/balance', '/api/accounts/me/transactions'], forward('account'));
 app.get(['/api/students/:studentCode', '/api/tuitions/student/:studentCode'], forward('student'));
 app.post(['/api/payments/create-intent', '/api/payments/confirm-otp'], forward('payment'));

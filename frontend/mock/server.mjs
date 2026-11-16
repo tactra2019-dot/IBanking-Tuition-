@@ -36,6 +36,10 @@ export function createMockServer(bank = createBank()) {
       }
       if (url.pathname === "/auth/me" && req.method === "GET")
         return send(200, bank.user());
+      if (url.pathname === "/auth/email-change/request" && req.method === "POST")
+        return send(202, bank.requestEmailChange(data.email, data.password));
+      if (url.pathname === "/auth/email-change/confirm" && req.method === "POST")
+        return send(200, bank.confirmEmailChange(data.code));
       if (url.pathname === "/accounts/me" && req.method === "GET")
         return send(200, bank.account());
       const s = url.pathname.match(/^\/students\/([a-zA-Z0-9]+)\/tuition$/);

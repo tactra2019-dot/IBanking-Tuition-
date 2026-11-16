@@ -9,6 +9,12 @@ CREATE TABLE IF NOT EXISTS users (
   phone varchar(20) NOT NULL
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email varchar(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_code_hash varchar(64);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_expires_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_change_requested_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS accounts (
   id varchar(50) PRIMARY KEY,
   user_id uuid NOT NULL UNIQUE,

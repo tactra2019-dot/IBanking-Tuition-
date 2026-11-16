@@ -58,6 +58,48 @@ paths:
                       phone: { type: string }
                       accountId: { type: string, nullable: true }
         '401': { description: Token thiếu, sai, hết hạn hoặc người dùng đã bị xóa }
+  /api/auth/email-change/request:
+    post:
+      summary: Gửi mã xác minh tới email nhận thông báo mới
+      description: Yêu cầu mật khẩu hiện tại; email chưa đổi cho đến khi xác minh mã. Giới hạn một yêu cầu mỗi 60 giây.
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 100 }
+                password: { type: string, format: password }
+      responses:
+        '202': { description: Đã gửi mã 6 chữ số đến email mới, hiệu lực 5 phút }
+        '400': { description: Dữ liệu đầu vào không hợp lệ }
+        '401': { description: Token hoặc mật khẩu không hợp lệ }
+        '409': { description: Email mới trùng email hiện tại }
+        '429': { description: Yêu cầu quá thường xuyên }
+        '503': { description: Chưa xác nhận được gửi email; mã vẫn có thể sử dụng nếu thư đã đến }
+  /api/auth/email-change/confirm:
+    post:
+      summary: Xác minh email mới và cập nhật hồ sơ
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200': { description: Email mới đã được lưu; giao dịch tạo sau đó dùng email mới }
+        '400': { description: Mã sai hoặc không hợp lệ }
+        '401': { description: Token không hợp lệ }
+        '404': { description: Không có yêu cầu đổi email }
+        '410': { description: Mã đã hết hạn }
+        '429': { description: Quá số lần nhập mã }
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }

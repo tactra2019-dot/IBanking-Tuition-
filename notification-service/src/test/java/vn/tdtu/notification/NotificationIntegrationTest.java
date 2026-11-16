@@ -38,6 +38,7 @@ class NotificationIntegrationTest {
     @BeforeEach void reset() { SMTP.messages.clear(); SMTP.reject.set(false); }
     @AfterAll static void close() throws IOException { SMTP.close(); }
     Map<String,Object> otp() { return new HashMap<>(Map.of("eventId",UUID.randomUUID().toString(),"paymentId","PAY-123","to","payer@example.com","otp","123456","expiresAt",Instant.now().plusSeconds(240).toString())); }
+    Map<String,Object> emailChange() { return new HashMap<>(Map.of("eventId",UUID.randomUUID().toString(),"to","new@example.com","otp","654321","expiresAt",Instant.now().plusSeconds(240).toString())); }
     Map<String,Object> success() { return new HashMap<>(Map.of("eventId",UUID.randomUUID().toString(),"paymentId","PAY-123","to","payer@example.com","studentId","52200001","studentName","Nguyễn Minh Anh","amount",7500000,"paidAt",Instant.now().minusSeconds(10).toString(),"status","SUCCESS")); }
     org.springframework.test.web.servlet.ResultActions send(String path,Map<String,Object> body) throws Exception { return mvc.perform(post("/internal/notifications/"+path).header("X-Internal-Key",TEST_KEY).contentType("application/json").content(mapper.writeValueAsBytes(body))); }
     @Test void unauthorizedCallerCannotSend() throws Exception {
@@ -51,6 +52,13 @@ class NotificationIntegrationTest {
         assertThat(email.getSubject()).isEqualTo("Mã OTP xác thực thanh toán học phí");
         assertThat(email.getContent().toString()).contains("123456","PAY-123","Hết hạn lúc","giờ Việt Nam","chưa phải xác nhận thanh toán thành công");
         assertThat(email.getAllRecipients()[0].toString()).isEqualTo("payer@example.com");
+    }
+    @Test void sendsEmailChangeCodeOnlyToNewAddress() throws Exception {
+        send("email-change",emailChange()).andExpect(status().isOk()).andExpect(jsonPath("$.deliveryStatus").value("SENT"));
+        MimeMessage email=SMTP.next();
+        assertThat(email.getSubject()).contains("Xác minh email");
+        assertThat(email.getAllRecipients()[0].toString()).isEqualTo("new@example.com");
+        assertThat(email.getContent().toString()).contains("654321").doesNotContain("thanh toán học phí thành công");
     }
     @Test void sendsConfirmedSuccessWithEscapedStudentName() throws Exception {
         var body=success();body.put("studentName","<script>alert(1)</script>");

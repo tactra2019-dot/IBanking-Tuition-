@@ -43,7 +43,7 @@ Bảng phản ánh phân công nhóm và thành phần hiện có; Git history k
 | Backend services và Gateway | Node.js, TypeScript, Express, Prisma Client | Năm tiến trình HTTP độc lập; bốn service dữ liệu và một Gateway |
 | Database | PostgreSQL 16 trong Compose, Prisma schema, SQL | Dữ liệu nghiệp vụ, transaction, constraint và role theo service |
 | Authentication | scrypt có salt; JWT HS256, hạn 15 phút | Đăng nhập và định danh request |
-| Notification | Java 17, Spring Boot 3.5.16, Spring Mail | Gửi OTP và biên nhận qua SMTP |
+| Notification | Java 17, Spring Boot 3.5.16, Spring Mail | Gửi OTP và biên nhận qua SMTP Mailpit hoặc nhà cung cấp thật |
 | Deployment/demo | Dockerfile, Docker Compose, Mailpit | Chạy service và hộp thư thử nghiệm local |
 | Testing | Node test runner, Vitest/Testing Library, JUnit, Mailpit | Unit, API, E2E, concurrency và email |
 | Developer tools | npm scripts, Maven Wrapper, Swagger UI/OpenAPI | Build, test và xem contract |
@@ -87,7 +87,7 @@ flowchart LR
 | Account | Express; số dư, lịch sử, debit/refund idempotent | 4003 |
 | Student | Express; MSSV, học phí, giữ chỗ và chốt PAID | 4001 |
 | Payment | Express; intent, OTP, trạng thái, recovery, biên nhận | 4002 |
-| Notification | Spring Boot; gửi OTP và biên nhận qua SMTP | 8085 |
+| Notification | Spring Boot; gửi OTP và biên nhận qua Mailpit hoặc SMTP thật | 8085 |
 | PostgreSQL | Một server/schema, bốn role giới hạn theo bảng service | 5432 trong Docker |
 | Mailpit | Hộp thư và SMTP thử nghiệm | 8025/1025 trong Docker |
 
@@ -147,6 +147,7 @@ Các lệnh bên dưới đã được kiểm tra trong **Windows PowerShell**. 
 | Kết nối | `AUTH_SERVICE_ORIGIN`, `ACCOUNT_SERVICE_ORIGIN`, `STUDENT_SERVICE_ORIGIN`, `PAYMENT_SERVICE_ORIGIN`, `NOTIFICATION_SERVICE_URL`, `MAILPIT_ORIGIN` | Địa chỉ service cho tiến trình chạy trên host và bài test |
 | Frontend | `VITE_DEMO_MODE`, `VITE_API_BASE_URL`, `VITE_API_CONTRACT_CONFIRMED` | Chọn mock/API thật và địa chỉ Gateway `/api` |
 | SMTP local | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_AUTH`, `SMTP_STARTTLS`, `MAIL_FROM` | Cấu hình Notification khi không dùng mặc định Mailpit trong Compose |
+| SMTP thật | `NOTIFICATION_SMTP_HOST`, `NOTIFICATION_SMTP_PORT`, `NOTIFICATION_SMTP_USERNAME`, `NOTIFICATION_SMTP_PASSWORD`, `NOTIFICATION_SMTP_AUTH`, `NOTIFICATION_SMTP_STARTTLS`, `NOTIFICATION_SMTP_SSL`, `NOTIFICATION_MAIL_FROM` | Chỉ dùng với `compose.smtp.yml`; credential giữ ngoài Git |
 
 Xem [.env.example](.env.example), [frontend/.env.example](frontend/.env.example) và [application.yml](notification-service/src/main/resources/application.yml). Compose cấu hình Notification gửi qua Mailpit, nên không cần tài khoản SMTP thật. `SMTP_HOST/PORT/USER/PASS` ở `.env` là fallback của Payment khi không dùng Notification; `SMTP_USERNAME/PASSWORD/AUTH/STARTTLS/MAIL_FROM` là cấu hình Spring Mail khi chạy Notification ngoài Compose. Không đưa secret vào `VITE_*` hoặc Git.
 
@@ -282,6 +283,29 @@ Mở `http://127.0.0.1:5173/`. Gateway trả Bearer JWT sau login; frontend gi�
 
 Để xem UI độc lập với backend, đặt `VITE_DEMO_MODE=true` trong `frontend/.env` rồi chạy `npm.cmd run dev --prefix frontend`. Script này khởi động Vite và mock API; dữ liệu lưu trong RAM, OTP mock khác với OTP Mailpit và **không chứng minh backend thật hoạt động**. Không chạy đồng thời `dev` và `dev:ui` trên cùng cổng 5173.
 
+### Gửi email thật qua Gmail (tùy chọn)
+
+Compose mặc định dùng Mailpit để kiểm thử. Để **không chạy Mailpit** và gửi OTP/biên nhận qua Gmail, dùng `compose.smtp.yml` thay cho `compose.integration.yml`. Tài khoản Gmail gửi thư cần bật xác minh hai bước và tạo [App Password theo hướng dẫn Google](https://support.google.com/accounts/answer/185833); **không dùng mật khẩu đăng nhập Gmail thông thường**. Google công bố SMTP `smtp.gmail.com`, port **587/STARTTLS** trong [hướng dẫn SMTP](https://support.google.com/mail/answer/7104828).
+
+Trong `.env.compose.local` (file Git ignore), đặt `NOTIFICATION_SMTP_HOST=smtp.gmail.com`, `NOTIFICATION_SMTP_PORT=587`, `NOTIFICATION_SMTP_USERNAME=<email-gửi>`, `NOTIFICATION_MAIL_FROM=<email-gửi>`, `NOTIFICATION_SMTP_AUTH=true`, `NOTIFICATION_SMTP_STARTTLS=true` và `NOTIFICATION_SMTP_SSL=false`. Để `NOTIFICATION_SMTP_PASSWORD=` trống trong file và nhập App Password khi chạy, tránh lưu mật khẩu vào repository. Địa chỉ nhận OTP lấy từ `users.email` của tài khoản đang đăng nhập: đặt `DEMO_EMAIL=<email-nhận-thật>` **trước lần seed đầu**. Sửa `DEMO_EMAIL` sau khi seed không đổi email của user cũ; cần cập nhật bản ghi demo bằng công cụ quản trị hoặc tạo schema demo mới.
+
+Từ thư mục gốc repo, sau khi đã tạo database, role và `.env.compose.local` như Option A:
+
+```powershell
+$project = 'ibanking-demo'
+$secure = Read-Host 'Gmail App Password' -AsSecureString
+$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $env:NOTIFICATION_SMTP_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.smtp.yml -f compose.microservices.yml config -q
+  docker compose -p $project --env-file .env.compose.local -f docker-compose.yml -f compose.smtp.yml -f compose.microservices.yml up -d --build --wait --remove-orphans
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+  Remove-Item Env:NOTIFICATION_SMTP_PASSWORD -ErrorAction SilentlyContinue
+}
+```
+
+Khi chuyển từ project Compose Mailpit cùng tên, `--remove-orphans` dừng/xóa container Mailpit; dữ liệu PostgreSQL volume được giữ. Cần nhập lại App Password khi tạo lại/recreate Notification container. Chỉ dùng email thử nghiệm do bạn kiểm soát; bộ `test:e2e` đọc OTP từ Mailpit nên **không chạy bộ test đó ở chế độ Gmail thật**. Nếu gửi OTP lỗi, Payment không được debit; lỗi biên nhận sau COMPLETED được retry, không đảo giao dịch đã hoàn tất.
 ### Quản lý Compose
 
 Sau khi cấu hình ở các bước trên, kiểm tra và xem log bằng:
@@ -334,6 +358,8 @@ Frontend gọi `VITE_API_BASE_URL` kết thúc bằng `/api`. Gateway chuyển n
 | Gateway | GET | `/health` | Health check | Không |
 | Auth | POST | `/api/auth/login` | Username/password → JWT | Không |
 | Auth | GET | `/api/auth/me` | Hồ sơ người dùng | Bearer JWT |
+| Auth | POST | `/api/auth/email-change/request` | Kiểm tra mật khẩu và gửi mã tới email mới | Bearer JWT |
+| Auth | POST | `/api/auth/email-change/confirm` | Xác minh mã và cập nhật email | Bearer JWT |
 | Account | GET | `/api/accounts/me` | Tài khoản hiện tại | Bearer JWT |
 | Account | GET | `/api/accounts/me/balance` | Số dư | Bearer JWT |
 | Account | GET | `/api/accounts/me/transactions` | Lịch sử | Bearer JWT |
@@ -344,7 +370,13 @@ Frontend gọi `VITE_API_BASE_URL` kết thúc bằng `/api`. Gateway chuyển n
 | Payment | GET | `/api/payments/:paymentId` | Chi tiết/trạng thái | Bearer JWT |
 | Payment | GET | `/api/payments/account/:accountId` | Lịch sử theo account sở hữu | Bearer JWT |
 
-API nội bộ **không được Gateway công bố**: Account `GET /api/accounts/:accountId`, `POST /api/accounts/deduct`, `POST /api/accounts/refund` dùng service token; Student `GET /internal/tuitions/:id`, `POST /internal/tuitions/:id/{reserve,commit,release}` dùng service token; Notification `POST /internal/notifications/otp` và `/payment-success` dùng internal key. Chúng phục vụ điều phối, không gọi trực tiếp từ frontend.
+API nội bộ **không được Gateway công bố**: Account `GET /api/accounts/:accountId`, `POST /api/accounts/deduct`, `POST /api/accounts/refund` dùng service token; Student `GET /internal/tuitions/:id`, `POST /internal/tuitions/:id/{reserve,commit,release}` dùng service token; Notification `POST /internal/notifications/otp`, `/email-change` và `/payment-success` dùng internal key. Chúng phục vụ điều phối, không gọi trực tiếp từ frontend.
+
+### Đổi email nhận thông báo
+
+Trong **Tài khoản của tôi**, nhập email mới và mật khẩu hiện tại, sau đó nhập mã 6 chữ số được gửi tới email mới. Mã hết hạn sau 5 phút, tối đa 5 lần nhập sai; yêu cầu mã mới cách nhau ít nhất 60 giây. Auth chỉ lưu email mới sau khi mã đúng. OTP và biên nhận của **giao dịch tạo sau khi đổi** gửi tới email mới; giao dịch đã tạo trước đó giữ địa chỉ người trả tiền đã ghi trong payment. Nếu đang dùng Mailpit, lấy mã xác minh trong Mailpit; nếu dùng Gmail SMTP, xem hộp thư email mới. Chế độ mock dùng mã `123456` và không gửi email thật.
+
+Hai API dùng Bearer JWT: `POST /api/auth/email-change/request` nhận `{ "email": "new@example.com", "password": "..." }`; `POST /api/auth/email-change/confirm` nhận `{ "code": "123456" }`. Không ghi mã hoặc mật khẩu vào log. Với schema demo đã tạo trước khi có tính năng này, chạy `npm.cmd run db:account` một lần bằng `DATABASE_URL` quản trị đúng schema trước khi khởi động Auth mới để thêm các cột xác minh vào bảng `users`.
 
 Gateway cho phép origin frontend và các header `Authorization`, `Content-Type`, `Idempotency-Key`. Xem Swagger Gateway tại `/docs/` và tài liệu [Auth/Account/Gateway](docs/tv1.md), [Payment–Account contract](docs/payment-account-contract.md), [OpenAPI Payment/Student](specs/001-payment-student-service/contracts/openapi.yaml).
 
@@ -461,7 +493,7 @@ cd notification-service
 
 Không commit `.env`, URL role, JWT/service token, mật khẩu DB hay OTP. Chỉ Gateway và các cổng demo cần thiết được publish trên loopback; không dùng cấu hình này để mở trực tiếp ra Internet. Mailpit chỉ dùng email giả lập. Bốn service dùng chung một PostgreSQL server/schema nhưng quyền bảng được chia theo role; đây là mức tách dữ liệu hiện có của dự án.
 
-Kiểm thử API và email local đã đạt; **kiểm tra trực quan desktop/mobile và toàn bộ thao tác UI bằng trình duyệt chưa được xác nhận tự động**. [Final audit](docs/FINAL_AUDIT_REPORT.md) đánh giá `NOT READY — CRITICAL ISSUES` trước khi khẳng định đáp ứng toàn bộ đề. OTP được gắn với `paymentId` và không dùng nhầm giữa các giao dịch, nhưng bộ sinh mã số chưa bảo đảm hai OTP đang hiệu lực luôn khác nhau; xem [final audit](docs/FINAL_AUDIT_REPORT.md) trước khi khẳng định đáp ứng toàn bộ đề. `npm audit --omit=dev` ở thời điểm QA còn bốn cảnh báo high ở backend, cần đánh giá/nâng dependency trước khi triển khai công khai. Chuyển dữ liệu demo cũ sang kiến trúc mới cần kế hoạch backfill và đối soát payment đang mở; không chạy `db:push` lên schema cũ.
+Kiểm thử API và email local qua Mailpit đã đạt. Ngày 16/11/2026, Notification đã báo `SENT` khi gửi email xác minh thử qua Gmail SMTP; việc thư xuất hiện trong hộp thư người nhận và toàn bộ thao tác UI trực tiếp trên desktop/mobile chưa được xác nhận tự động. [Final audit](docs/FINAL_AUDIT_REPORT.md) đánh giá `NOT READY — CRITICAL ISSUES` trước khi khẳng định đáp ứng toàn bộ đề. OTP được gắn với `paymentId` và không dùng nhầm giữa các giao dịch, nhưng bộ sinh mã số chưa bảo đảm hai OTP đang hiệu lực luôn khác nhau; xem [final audit](docs/FINAL_AUDIT_REPORT.md) trước khi khẳng định đáp ứng toàn bộ đề. `npm audit --omit=dev` ở thời điểm QA còn bốn cảnh báo high ở backend, cần đánh giá/nâng dependency trước khi triển khai công khai. Chuyển dữ liệu demo cũ sang kiến trúc mới cần kế hoạch backfill và đối soát payment đang mở; không chạy `db:push` lên schema cũ.
 
 ## Giao diện, tài liệu và tình trạng dự án
 

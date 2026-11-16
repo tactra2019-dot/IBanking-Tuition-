@@ -1,0 +1,24 @@
+services:
+  notification:
+    image: ibanking-notification:local
+    build: ./notification-service
+    restart: unless-stopped
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SMTP_HOST: ${NOTIFICATION_SMTP_HOST:?Set NOTIFICATION_SMTP_HOST}
+      SMTP_PORT: ${NOTIFICATION_SMTP_PORT:-587}
+      SMTP_USERNAME: ${NOTIFICATION_SMTP_USERNAME:?Set NOTIFICATION_SMTP_USERNAME}
+      SMTP_PASSWORD: ${NOTIFICATION_SMTP_PASSWORD:?Set NOTIFICATION_SMTP_PASSWORD}
+      SMTP_AUTH: ${NOTIFICATION_SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${NOTIFICATION_SMTP_STARTTLS:-true}
+      SMTP_SSL: ${NOTIFICATION_SMTP_SSL:-false}
+      MAIL_FROM: ${NOTIFICATION_MAIL_FROM:?Set NOTIFICATION_MAIL_FROM}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?Set NOTIFICATION_INTERNAL_KEY}
+    ports:
+      - "127.0.0.1:${NOTIFICATION_PORT:-8085}:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8085/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s

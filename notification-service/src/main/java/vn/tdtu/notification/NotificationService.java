@@ -29,6 +29,11 @@ public class NotificationService {
         if (!request.expiresAt().isAfter(now) || request.expiresAt().isAfter(now.plusSeconds(300))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP expiration must be within five minutes.");
         return deliver(request.eventId(), request.to(), "Mã OTP xác thực thanh toán học phí", EmailTemplates.otp(request));
     }
+    public String emailChange(NotificationRequests.EmailChange request) {
+        Instant now = clock.instant();
+        if (!request.expiresAt().isAfter(now) || request.expiresAt().isAfter(now.plusSeconds(300))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Verification expiration must be within five minutes.");
+        return deliver(request.eventId(), request.to(), "Xác minh email nhận thông báo iBanking", EmailTemplates.emailChange(request));
+    }
     public String success(NotificationRequests.PaymentSuccess request) {
         if (!"SUCCESS".equals(request.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Confirmed SUCCESS required.");
         return deliver(request.eventId(), request.to(), "Xác nhận thanh toán học phí thành công", EmailTemplates.success(request));
