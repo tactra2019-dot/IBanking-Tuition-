@@ -2,7 +2,10 @@ import 'dotenv/config';
 import { prisma } from '../src/shared/prisma';
 
 async function main() {
-  for (const [studentCode, amount] of [['521H9001', 7000000], ['521H9002', 5000000], ['521H9003', 12000000]] as const) {
+  for (const [studentCode, amount] of [
+    ['521H9001', 7000000], ['521H9002', 5000000], ['521H9003', 12000000],
+    ['521H9004', 7000000], ['521H9005', 8000000], ['521H9006', 9000000],
+  ] as const) {
     await prisma.student.upsert({
       where: { studentCode }, update: {},
       create: {

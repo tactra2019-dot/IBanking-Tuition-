@@ -239,7 +239,7 @@ npm.cmd run seed:integration
 npm.cmd run build
 ```
 
-`seed:account` tạo `demo1`/`demo2`; `seed:integration` tạo ba MSSV `521H9001`–`521H9003`. Seed account **không đổi mật khẩu** của user đã tồn tại. Nếu đổi `DEMO_PASSWORD` sau lần seed đầu, tài khoản cũ vẫn dùng mật khẩu ban đầu. Không chạy script `npm run seed` cũ trên database demo đang sử dụng.
+`seed:account` tạo `demo1`/`demo2`; `seed:integration` tạo sáu MSSV `521H9001`–`521H9006` với học phí lần lượt 7, 5, 12, 7, 8 và 9 triệu đồng. Seed idempotent: chạy lại chỉ thêm MSSV còn thiếu, **không đặt lại** khoản đã `PAID`. Seed account **không đổi mật khẩu** của user đã tồn tại. Nếu đổi `DEMO_PASSWORD` sau lần seed đầu, tài khoản cũ vẫn dùng mật khẩu ban đầu. Không chạy script `npm run seed` cũ trên database demo đang sử dụng.
 
 #### 4. Chạy năm service Node bằng Docker Compose
 
@@ -431,10 +431,10 @@ Frontend chỉ hiện thành công khi API trả trạng thái hoàn tất. API 
 ## Hướng dẫn demo
 
 1. Mở frontend; đăng nhập `demo1` hoặc `demo2` bằng `DEMO_PASSWORD` đã đặt lúc seed. Mật khẩu không được đưa vào repo.
-2. Xem account và số dư ở Dashboard; vào Thanh toán học phí, tra `521H9001`, `521H9002` hoặc `521H9003` nếu còn UNPAID.
+2. Xem account và số dư ở Dashboard; vào Thanh toán học phí, tra `521H9004`, `521H9005` hoặc `521H9006` nếu còn `UNPAID` (bản clone mới cũng có `521H9001`–`521H9003`).
 3. Xem tên sinh viên, học kỳ, số tiền; xác nhận thanh toán **toàn bộ**, không nhập số tiền tùy ý.
-4. Mở Mailpit tại cổng `MAILPIT_HTTP_PORT`, lấy OTP email của giao dịch mới nhất trong 5 phút và nhập trên UI.
-5. Xem kết quả, số dư mới, trạng thái học phí PAID và lịch sử; xem thêm email biên nhận trong Mailpit.
+4. Nếu dùng Mailpit, mở cổng `MAILPIT_HTTP_PORT`; nếu dùng Gmail SMTP, mở hộp thư của tài khoản đang đăng nhập. Lấy OTP của giao dịch mới nhất trong 5 phút và nhập trên UI.
+5. Xem kết quả, số dư mới, trạng thái học phí PAID và lịch sử; xem email biên nhận qua cùng kênh đã nhận OTP.
 
 Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Để demo lại từ đầu, tạo **checkout và project Compose mới**, schema `micro_` mới và cổng host còn trống, rồi lặp lại các bước cấu hình, tạo bảng/role và seed ở Option A. Checkout riêng tránh xung đột file `.env.micro-roles.local` vốn chỉ được tạo một lần. Giữ volume cũ nếu cần đối soát; không dùng `docker compose down -v` hoặc `db:push` lên schema đang có dữ liệu. Mật khẩu demo được chọn khi seed lần đầu và không lưu trong README.
 
