@@ -24,6 +24,7 @@
     "test:e2e": "tsx --test tests/e2e.test.ts",
     "recover": "tsx prisma/check-micro-schema.ts && tsx src/payment-service/recover-once.ts",
     "seed:integration": "tsx prisma/check-micro-schema.ts && tsx prisma/seed-integration.ts",
+    "demo:reset": "tsx prisma/reset-demo.ts",
     "db:roles": "tsx prisma/provision-micro-roles.ts",
     "dev:gateway": "tsx src/api-gateway/index.ts",
     "test:processes": "tsx --test tests/processes.test.ts",

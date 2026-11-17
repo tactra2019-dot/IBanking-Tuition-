@@ -16,6 +16,7 @@
 - [API qua Gateway](#api-qua-gateway)
 - [Quy trình thanh toán và tính nhất quán](#quy-trình-thanh-toán-và-tính-nhất-quán)
 - [Hướng dẫn demo](#hướng-dẫn-demo)
+- [Reset dữ liệu demo](#reset-dữ-liệu-demo)
 - [Đặt lại mật khẩu tài khoản demo](#đặt-lại-mật-khẩu-tài-khoản-demo)
 - [Build và kiểm thử](#build-và-kiểm-thử)
 - [Giao diện, tài liệu và tình trạng dự án](#giao-diện-tài-liệu-và-tình-trạng-dự-án)
@@ -436,7 +437,36 @@ Frontend chỉ hiện thành công khi API trả trạng thái hoàn tất. API 
 4. Nếu dùng Mailpit, mở cổng `MAILPIT_HTTP_PORT`; nếu dùng Gmail SMTP, mở hộp thư của tài khoản đang đăng nhập. Lấy OTP của giao dịch mới nhất trong 5 phút và nhập trên UI.
 5. Xem kết quả, số dư mới, trạng thái học phí PAID và lịch sử; xem email biên nhận qua cùng kênh đã nhận OTP.
 
-Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Để demo lại từ đầu, tạo **checkout và project Compose mới**, schema `micro_` mới và cổng host còn trống, rồi lặp lại các bước cấu hình, tạo bảng/role và seed ở Option A. Checkout riêng tránh xung đột file `.env.micro-roles.local` vốn chỉ được tạo một lần. Giữ volume cũ nếu cần đối soát; không dùng `docker compose down -v` hoặc `db:push` lên schema đang có dữ liệu. Mật khẩu demo được chọn khi seed lần đầu và không lưu trong README.
+Seed chỉ thêm fixture chưa tồn tại và không reset giao dịch đã hoàn tất. Xem lệnh reset fixture demo ở mục tiếp theo. Nếu cần giữ lịch sử cũ để đối soát, tạo **checkout và project Compose mới** với schema `micro_` mới, rồi lặp lại các bước cấu hình, tạo bảng/role và seed ở Option A. Checkout riêng tránh xung đột file `.env.micro-roles.local` vốn chỉ được tạo một lần. Không dùng `docker compose down -v` để reset vì lệnh đó xóa cả volume PostgreSQL. Mật khẩu demo được chọn khi seed lần đầu và không lưu trong README.
+
+## Reset dữ liệu demo
+
+`npm.cmd run demo:reset` **chỉ xem trước**, không ghi database. `npm.cmd run demo:reset -- --apply` xóa payment, OTP và debit ledger liên quan đến hai account `ACC-001`/`ACC-002` và sáu MSSV seed; đưa số dư `demo1`/`demo2` về 50/30 triệu và học phí `521H9001`–`521H9006` về `UNPAID`. Tài khoản đăng nhập, mật khẩu, email và thông tin sinh viên được giữ nguyên. **Lịch sử thanh toán demo sẽ mất**. Script chỉ nhận schema `micro_demo_*` khớp chính xác `DEMO_RESET_SCHEMA`; từ chối khi có payment đang xử lý, giao dịch liên quan dữ liệu ngoài seed hoặc trạng thái học phí không nhất quán. Đây là công cụ cho môi trường demo, không dùng trên production.
+
+Trên máy đang dùng project `ibanking-live` và schema `micro_demo_live_20261115`, từ `D:\Midterm_SOA` xem trước:
+
+```powershell
+cd D:\Midterm_SOA
+$env:DEMO_RESET_SCHEMA = 'micro_demo_live_20261115'
+npm.cmd run demo:reset
+```
+
+Chỉ sau khi kiểm tra đúng số giao dịch sẽ xóa, dừng các service có thể tạo/xử lý payment rồi thực hiện reset:
+
+```powershell
+$containers = @('ibanking-live-gateway-1', 'ibanking-live-auth-1', 'ibanking-live-account-1', 'ibanking-live-student-1', 'ibanking-live-payment-1')
+docker stop $containers
+if ($LASTEXITCODE -ne 0) { throw 'Chưa dừng được tất cả service' }
+$env:DEMO_RESET_SERVICES_STOPPED = 'YES'
+try {
+  npm.cmd run demo:reset -- --apply
+} finally {
+  Remove-Item Env:DEMO_RESET_SERVICES_STOPPED, Env:DEMO_RESET_SCHEMA -ErrorAction SilentlyContinue
+  docker start $containers
+}
+```
+
+PostgreSQL và Notification tiếp tục chạy; sau reset, đăng nhập lại để xem số dư và học phí mới. Khi clone sang máy khác, thay project/container và `DEMO_RESET_SCHEMA` bằng tên thực tế trong `.env`. Nếu cần giữ lịch sử đã thanh toán, dùng schema mới thay vì reset.
 
 ## Đặt lại mật khẩu tài khoản demo
 
